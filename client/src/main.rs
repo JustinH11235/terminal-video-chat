@@ -43,8 +43,6 @@ use tui_image::{ColorMode, Image};
 
 // use nokhwa::{Camera, CameraFormat, FrameFormat};
 
-const DB_PATH: &str = "./data/db.json";
-
 // #[derive(Serialize, Deserialize, Clone)]
 // struct Pet {
 //     id: usize,
@@ -194,6 +192,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat_history: Vec<String> = Vec::with_capacity(5);
     let mut current_input = String::with_capacity(20);
 
+    let mut chat_history_list_state = ListState::default();
+    chat_history_list_state.select(Some(0));
+
     // println!("start get colors");
     let img_path = "test_image.jpg";
     // let img = open(img_path);
@@ -265,13 +266,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .as_ref(),
                 )
                 .split(video_area);
-            let chat_sections = Layout::default()
-                .direction(Direction::Vertical)
-                .margin(1)
-                .constraints([Constraint::Min(1), Constraint::Length(1)].as_ref())
-                .split(chat_area);
-            let chat_history_area = chat_sections[0];
-            let chat_input_area = chat_sections[1];
 
             let video_frame = Block::default()
                 .borders(Borders::ALL)
@@ -291,6 +285,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .border_style(Style::default().fg(Color::White))
                 .border_type(BorderType::Double)
                 .style(Style::default().bg(Color::Black));
+            screen_area.render_widget(chat_frame.clone(), chat_area);
+
+            let chat_sections = Layout::default()
+                .direction(Direction::Vertical)
+                // .margin(1)
+                .constraints([Constraint::Min(1), Constraint::Length(1)].as_ref())
+                .split(chat_frame.inner(chat_area));
+            let chat_history_area = chat_sections[0];
+            let chat_input_area = chat_sections[1];
 
             let chat_history_area_len = chat_history_area.height as usize;
             let chat_history_items: Vec<ListItem> = chat_history
@@ -301,13 +304,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .collect();
             let chat_history_widget = List::new(chat_history_items)
                 .style(Style::default().fg(Color::LightCyan))
-                .block(Block::default().style(Style::default().fg(Color::White)));
-            screen_area.render_widget(chat_history_widget, chat_history_area);
+                .block(Block::default().style(Style::default().fg(Color::White)))
+                .highlight_style(
+                    Style::default()
+                        .bg(Color::Yellow)
+                        .fg(Color::Black)
+                        .add_modifier(Modifier::BOLD),
+                );
+            screen_area.render_stateful_widget(chat_history_widget, chat_history_area, &mut chat_history_list_state);
 
-            screen_area.render_widget(chat_frame, chat_area);
             let chat_input_items = vec![ListItem::new(vec![Spans::from(current_input.clone())])];
             let chat_input_widget = List::new(chat_input_items)
-                .style(Style::default().fg(Color::Rgb((255), (150), (150))))
+                .style(Style::default().fg(Color::Rgb(255, 150, 150)))
                 .block(Block::default().style(Style::default().fg(Color::White)));
             screen_area.render_widget(chat_input_widget, chat_input_area);
         })?;
