@@ -1,10 +1,19 @@
-use tokio::{net::TcpListener, sync::broadcast, io::BufReader, io::AsyncBufReadExt, io::AsyncWriteExt};
+use tokio::{net::TcpListener, sync::broadcast, io::{BufReader, AsyncReadExt}, io::AsyncBufReadExt, io::AsyncWriteExt};
+use serde::{Deserialize, Serialize};
 
 // impl as_bytes if needed
-#[derive(Clone, Debug)]
-enum MessageData {
-    Chat(String),
-    Image(u8),
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ChatData {
+    // HelloLan(String, u16),                     // user_name, server_port
+    // HelloUser(String),                         // user_name
+    ChatMessage(String),                          // content
+    // Video(Option<(Vec<RGB8>, usize, usize)>), // Option of (stream_data, width, height ) None means stream has ended
+}
+
+fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
+    let buf = bincode::serialize(chat_data).expect("serialize failed");
+    let buf_with_header = [&buf.len().to_be_bytes(), &buf[..]].concat();
+    return buf_with_header;
 }
 
 #[tokio::main]
@@ -33,28 +42,67 @@ async fn main() {
         tokio::spawn(async move {
             let (reader, mut writer) = socket.split();
             let mut buf_reader = BufReader::new(reader);
-            let mut line = String::new();
+            // let mut line = String::new();
 
             loop {
                 tokio::select! {
-                    bytes_read = buf_reader.read_line(&mut line) => {
-                        if bytes_read.expect("unrecognized chars found, handle properly") == 0 {
-                            // EOF found
-                            break;
+                    // get incoming message from client
+                    res = buf_reader.read_u64() => {
+                        match res {
+                            Ok(size) => {
+                                let mut buf = vec![0u8; size as usize];
+                                let res = buf_reader.read_exact(&mut buf).await;
+                                match res {
+                                    Ok(bytes_read) if bytes_read == size as usize => {
+                                        let chat_data = bincode::deserialize(&buf).expect("deserialize should work");
+                                        match chat_data {
+                                            ChatData::ChatMessage(msg) => {
+                                                println!("got message: \"{msg}\" from: {}", addr);
+                                                tx.send((ChatData::ChatMessage(msg), addr)).unwrap();
+                                            }
+                                            _ => {
+                                                println!("dont know what chat_data is");
+                                            }
+                                        }
+                                    }
+                                    Ok(_) => {
+                                        println!("didn't read right number of bytes");
+                                    }
+                                    Err(e) => match e.kind() {
+                                        tokio::io::ErrorKind::UnexpectedEof => {
+                                         println!("client disconnected");
+                                         break;
+                                        }
+                                         _ => println!("read u64: {}", e),
+                                     },
+                                }
+                            }
+                            Err(e) => match e.kind() {
+                               tokio::io::ErrorKind::UnexpectedEof => {
+                                println!("client disconnected");
+                                break;
+                               }
+                                _ => println!("read u64: {}", e),
+                            },
                         }
+                        // if bytes_read.expect("unrecognized chars found, handle properly") == 0 {
+                        //     // EOF found
+                        //     break;
+                        // }
 
-                        tx.send((MessageData::Chat(line.clone()), addr)).unwrap();
-                        line.clear();
+                        // tx.send((ChatData::ChatMessage(line.clone()), addr)).unwrap();
+                        // line.clear();
                     }
                     res = rx.recv() => {
                         let (msg, incoming_addr) = res.expect("has errors for running behind, or senders dropped, handle properly");
                         
                         if addr != incoming_addr {
                             match msg {
-                                MessageData::Chat(str) => {
-                                    writer.write_all(str.as_bytes()).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
+                                ChatData::ChatMessage(_) => {
+                                    let res = convert_to_stream_data(&msg);
+                                    writer.write_all(&res).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
                                 }
-                                MessageData::Image(_image) => panic!("Image Not Implemented")
+                                // ChatData::Image(_image) => panic!("Image Not Implemented")
                             }
                         }
                     }
