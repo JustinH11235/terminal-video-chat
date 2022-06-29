@@ -14,13 +14,16 @@ Todos:
 - 
 
 ### My Data Transfer Protocol
+```
 [ # of bytes of body ][ body (serialized via serde) ]
 [        u64         ][              x              ]
+```
 
 Sending Protocol:
 1. Serialize body of message.
 2. Get the number of bytes of serialized body as a u64.
 3. Send the concatenation of the number of bytes followed by the serialized body through the TCP socket.
+
 Receiving Protocol:
 1. Read 64 bits from TCP socket.
 2. Use that data as the length of the body and read that number of bytes.
