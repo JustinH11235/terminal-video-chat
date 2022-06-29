@@ -93,7 +93,7 @@ pub enum ChatData {
 
 fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
     let buf = bincode::serialize(chat_data).expect("serialize failed");
-    let buf_with_header = [&buf.len().to_be_bytes(), &buf[..]].concat();
+    let buf_with_header = [&(buf.len() as u64).to_be_bytes(), &buf[..]].concat();
     return buf_with_header;
 }
 
