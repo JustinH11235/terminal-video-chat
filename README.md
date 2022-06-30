@@ -1,12 +1,5 @@
 # terminal-video-chat
 
-Graphics options:
-- Color in background, gives us rectangle pixels
-- Use half-blocks like viu -b, gives us blurry but decent picture, can try to get viuer working or just copy tui-image and improve with half blocks
-- Use braille pixels from Canvas library, gives us rectangle pixels but stylized
-- viuer, won't be able to integrate as widget for custom kitty graphics, but could overlay on top if I figure out why my thread is breaking it
-- 
-
 Todos:
 
 Client:
@@ -25,6 +18,13 @@ Server:
 - [ ] Create chat rooms, with shareable names and passcodes instead of everyone connecting to the same room (maybe keep the general room for fun?)
 - [ ] Add support for sending video frames over TCP socket
 - [ ] Enable server to support 20-50 users in one chat room with video at once (clients only need to render one screen of video at a time), look into higher powered AWS server/load balanced server instances
+
+Graphics options:
+- Color in background, gives us rectangle pixels
+- Use half-blocks like viu -b, gives us blurry but decent picture, can try to get viuer working or just copy tui-image and improve with half blocks
+- Use braille pixels from Canvas library, gives us rectangle pixels but stylized
+- viuer, won't be able to integrate as widget for custom kitty graphics, but could overlay on top if I figure out why my thread is breaking it
+- 
 
 Ideas for optimizing speed of video transfer:
 - Have client tell server which id's/addresses it wants the latest video frame of (might be slow because it has to go client => server ===> client)
