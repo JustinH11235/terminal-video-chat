@@ -460,26 +460,26 @@ where
     img.to_rgb8()
 }
 
-pub fn group_by_color(img: RgbImage) -> HashMap<(u8, u8, u8), Vec<(f64, f64)>> {
-    let mut result = HashMap::<(u8, u8, u8), Vec<(f64, f64)>>::new();
-    let (_, height) = img.dimensions();
-    let height = height as i32;
-    for (x, y, color) in img.enumerate_pixels() {
-        let x = f64::from(x);
-        let y = f64::from(height - 1 - (y as i32));
-        let key = (color[0], color[1], color[2]);
-        if let Some(origin_value) = result.get(&key) {
-            let mut value = origin_value.clone();
-            value.push((x, y));
-            result.insert(key, value);
-        } else {
-            let mut value = Vec::<(f64, f64)>::new();
-            value.push((x, y));
-            result.insert(key, value);
-        }
-    }
-    result
-}
+// pub fn group_by_color(img: RgbImage) -> HashMap<(u8, u8, u8), Vec<(f64, f64)>> {
+//     let mut result = HashMap::<(u8, u8, u8), Vec<(f64, f64)>>::new();
+//     let (_, height) = img.dimensions();
+//     let height = height as i32;
+//     for (x, y, color) in img.enumerate_pixels() {
+//         let x = f64::from(x);
+//         let y = f64::from(height - 1 - (y as i32));
+//         let key = (color[0], color[1], color[2]);
+//         if let Some(origin_value) = result.get(&key) {
+//             let mut value = origin_value.clone();
+//             value.push((x, y));
+//             result.insert(key, value);
+//         } else {
+//             let mut value = Vec::<(f64, f64)>::new();
+//             value.push((x, y));
+//             result.insert(key, value);
+//         }
+//     }
+//     result
+// }
 
 // fn render_home<'a>() -> Paragraph<'a> {
 //     let home = Paragraph::new(vec![
