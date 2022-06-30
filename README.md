@@ -17,14 +17,20 @@ Client:
 - [ ] Let users toggle focused window, Up Down should be same keys for every screen, focused screen is what action is done to.
 - [ ] Make messages show as pending on client side (maybe greyed out), and update with info sent from server after
 - [ ] Make chat input drop to next line if first line is full, maybe allow it to take up a \% of chat area, either way make it scrollable like chat history
-- [ ] Optimize video frame => terminal pixel algorithm for speed & double vertical resolution using half-block chars
+- [ ] Optimize video frame => terminal pixel algorithm for speed & double vertical resolution using half-block chars (potentially dynamically change sampling resolution to achieve desired FPS) (ideally pass around max resolution that server accepts if possible, but downsample on client as necessary)
 
 Server:
 - [ ] Send ReturnToSender response to message originator with updated information of what other users received.
 - [ ] Refactor common TCP util functions into common place
 - [ ] Create chat rooms, with shareable names and passcodes instead of everyone connecting to the same room (maybe keep the general room for fun?)
 - [ ] Add support for sending video frames over TCP socket
-- [ ] Enable server to support 20-50 users in one chat room at once, look into higher powered AWS server/load balanced server instances
+- [ ] Enable server to support 20-50 users in one chat room with video at once (clients only need to render one screen of video at a time), look into higher powered AWS server/load balanced server instances
+
+Ideas for optimizing speed of video transfer:
+- Have client tell server which id's/addresses it wants the latest video frame of (might be slow because it has to go client => server ===> client)
+- Have server maintain a list of requested video frames from each client and only send those frames, this means it just has to go server ===> client, and only rarely does client update list on server
+- Put video frames in queue to be processed by threads on client? Throw away if id/addr is not being currently shown
+
 
 ### My Custom Data Transfer Protocol
 ```
