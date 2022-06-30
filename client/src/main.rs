@@ -52,34 +52,26 @@ use tui_image::{ColorMode, Image};
 //     created_at: DateTime<Utc>,
 // }
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("error reading the DB file: {0}")]
-    ReadDBError(#[from] io::Error),
-    #[error("error parsing the DB file: {0}")]
-    ParseDBError(#[from] serde_json::Error),
-}
-
 enum Event {
     UserInput(crossterm::event::KeyEvent),
     ServerInput(ChatData),
     Tick,
 }
 
-#[derive(Copy, Clone, Debug)]
-enum MenuItem {
-    Home,
-    Pets,
-}
+// #[derive(Copy, Clone, Debug)]
+// enum MenuItem {
+//     Home,
+//     Pets,
+// }
 
-impl From<MenuItem> for usize {
-    fn from(input: MenuItem) -> usize {
-        match input {
-            MenuItem::Home => 0,
-            MenuItem::Pets => 1,
-        }
-    }
-}
+// impl From<MenuItem> for usize {
+//     fn from(input: MenuItem) -> usize {
+//         match input {
+//             MenuItem::Home => 0,
+//             MenuItem::Pets => 1,
+//         }
+//     }
+// }
 
 #[derive(Serialize, Deserialize)]
 pub enum ChatData {
@@ -183,17 +175,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    // let menu_titles = vec!["Home", "Pets", "Add", "Delete", "Quit"];
-    // let mut active_menu_item = MenuItem::Home;
+    let mut chat_history: Vec<String> = Vec::with_capacity(8);
+    let mut current_input = String::with_capacity(16);
 
-    // let mut pet_list_state = ListState::default();
-    // pet_list_state.select(Some(0));
-
-    let mut chat_history: Vec<String> = Vec::with_capacity(5);
-    let mut current_input = String::with_capacity(20);
-
+    // note distinction that start_index is state only used by terminal.draw
+    let mut chat_history_start_index: usize = 0;
+    let mut chat_history_selected_ind: Option<usize> = None;
     let mut chat_history_list_state = ListState::default();
-    chat_history_list_state.select(Some(0));
+    chat_history_list_state.select(None);
+
+    let mut current_chat_input_index: usize = 0;
 
     // println!("start get colors");
     let img_path = "test_image.jpg";
@@ -256,23 +247,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .split(screen_size);
             let video_area = hoz_areas[0];
             let chat_area = hoz_areas[1];
-            let num_video_panes = 2;
-            let video_panes = Layout::default()
-                .direction(Direction::Horizontal)
-                .margin(1)
-                .constraints(
-                    [Constraint::Percentage(100 / num_video_panes)]
-                        .repeat(num_video_panes.into())
-                        .as_ref(),
-                )
-                .split(video_area);
 
             let video_frame = Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::White))
                 .border_type(BorderType::Double)
                 .style(Style::default().bg(Color::Black));
-            screen_area.render_widget(video_frame, video_area);
+            screen_area.render_widget(video_frame.clone(), video_area);
+            let num_video_panes = 2;
+            let video_panes = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(
+                    [Constraint::Percentage(100 / num_video_panes)]
+                        .repeat(num_video_panes.into())
+                        .as_ref(),
+                )
+                .split(video_frame.inner(video_area));
             for video_pane in video_panes {
                 let img = img.clone();
                 screen_area
@@ -296,8 +286,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let chat_input_area = chat_sections[1];
 
             let chat_history_area_len = chat_history_area.height as usize;
+
+            // update visible window only if chat history is non-empty
+            if let Some(selected_ind) = chat_history_selected_ind {
+                // if selected_ind is out of bounds of visible window (it will be within bounds of chat_history), move visible window to be within bounds
+                if selected_ind >= chat_history_start_index + chat_history_area_len {
+                    chat_history_start_index = selected_ind - chat_history_area_len + 1;
+                } else if selected_ind < chat_history_start_index {
+                    chat_history_start_index = selected_ind;
+                }
+                // update list state index to match selected_ind
+                chat_history_list_state.select(Some(selected_ind - chat_history_start_index));
+            } else {
+                // update list state index to match selected_ind
+                chat_history_list_state.select(None);
+            }
+
             let chat_history_items: Vec<ListItem> = chat_history
-                .get(chat_history.len().saturating_sub(chat_history_area_len)..)
+                .get(
+                    chat_history_start_index
+                        ..std::cmp::min(
+                            chat_history_start_index + chat_history_area_len,
+                            chat_history.len(),
+                        ),
+                )
                 .unwrap()
                 .iter()
                 .map(|chat_msg| ListItem::new(Spans::from(chat_msg.clone())))
@@ -311,9 +323,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .fg(Color::Black)
                         .add_modifier(Modifier::BOLD),
                 );
-            screen_area.render_stateful_widget(chat_history_widget, chat_history_area, &mut chat_history_list_state);
+            screen_area.render_stateful_widget(
+                chat_history_widget,
+                chat_history_area,
+                &mut chat_history_list_state,
+            );
 
-            let chat_input_items = vec![ListItem::new(vec![Spans::from(current_input.clone())])];
+            let chat_input_items = vec![ListItem::new(vec![Spans::from(current_input.clone())])]; // use Paragraph instead of list
             let chat_input_widget = List::new(chat_input_items)
                 .style(Style::default().fg(Color::Rgb(255, 150, 150)))
                 .block(Block::default().style(Style::default().fg(Color::White)));
@@ -322,19 +338,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match rx.recv()? {
             Event::UserInput(event) => match event.code {
+                // check for ctrl vs no ctrl modifier, ctrl-C/D should quit also
                 KeyCode::Char('q') => {
                     let mut stdout = io::stdout();
                     execute!(stdout, LeaveAlternateScreen)?;
                     disable_raw_mode()?;
                     terminal.show_cursor()?;
+                    // once meeting rooms are setup, figure out how we want to quit threads etc.
                     break;
                 }
                 KeyCode::Char(c) => {
-                    // println!("got char {}", c);
+                    // create helper function to, when pushing a char (unless in insert mode), always move cursor one right
                     current_input.push(c);
+                    current_chat_input_index += 1;
+                }
+                KeyCode::Backspace => {
+                    if current_chat_input_index > 0 {
+                        current_input.remove(current_chat_input_index - 1);
+                        current_chat_input_index -= 1;
+                    }
+                }
+                KeyCode::Delete => {
+                    if current_chat_input_index < current_input.len() {
+                        current_input.remove(current_chat_input_index);
+                    }
                 }
                 KeyCode::Enter => {
-                    // println!("got enter");
                     let user_message = current_input.clone();
                     // send to server
                     let mess_data =
@@ -343,40 +372,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // initial add to chat history (will update after server response)
                     // chat_history.push(user_message);
                     current_input.clear();
+                    current_chat_input_index = 0;
                 }
-                // KeyCode::Char('h') => active_menu_item = MenuItem::Home,
-                // KeyCode::Char('p') => active_menu_item = MenuItem::Pets,
-                // KeyCode::Char('a') => {
-                //     add_random_pet_to_db().expect("can add new random pet");
-                // }
-                // KeyCode::Char('d') => {
-                //     remove_pet_at_index(&mut pet_list_state).expect("can remove pet");
-                // }
-                // KeyCode::Down => {
-                //     if let Some(selected) = pet_list_state.selected() {
-                //         let amount_pets = read_db().expect("can fetch pet list").len();
-                //         if selected >= amount_pets - 1 {
-                //             pet_list_state.select(Some(0));
-                //         } else {
-                //             pet_list_state.select(Some(selected + 1));
-                //         }
-                //     }
-                // }
-                // KeyCode::Up => {
-                //     if let Some(selected) = pet_list_state.selected() {
-                //         let amount_pets = read_db().expect("can fetch pet list").len();
-                //         if selected > 0 {
-                //             pet_list_state.select(Some(selected - 1));
-                //         } else {
-                //             pet_list_state.select(Some(amount_pets - 1));
-                //         }
-                //     }
-                // }
+                KeyCode::Up => {}
+                KeyCode::Down => {
+                    if let Some(selected_ind) = chat_history_selected_ind {
+                        if selected_ind + 1 < chat_history.len() {
+                            chat_history_selected_ind = Some(selected_ind + 1);
+                            // since terminal.draw has access to space available for chat history, we do the logic for changing chat_history_start_index there
+                        }
+                    } else if chat_history.len() > 0 {
+                        // should never be needed since when a new chat message is added we update selected_ind
+                        chat_history_selected_ind = Some(0);
+                    }
+                }
+                KeyCode::Right => {
+                    // move input cursor right (if chat input is focoused)
+                }
+                KeyCode::Left => {
+                    // move input cursor left (if chat input is focused)
+                }
                 _ => {}
             },
             Event::ServerInput(chat_data) => match chat_data {
                 ChatData::ChatMessage(chat_message) => {
+                    // make this a helper function so we don't forget to update selected_ind
                     chat_history.push(chat_message);
+                    // update selected_ind
+                    if let Some(selected_ind) = chat_history_selected_ind {
+                        // keep selected_ind at bottom if user was already at bottom of chat history
+                        if selected_ind == chat_history.len() - 2 {
+                            chat_history_selected_ind = Some(chat_history.len() - 1);
+                        }
+                    } else {
+                        // can put in helper function to share with failsafe, init_selected_ind
+                        chat_history_selected_ind = Some(0);
+                    }
                 }
             },
             Event::Tick => {}
@@ -433,30 +464,30 @@ pub fn group_by_color(img: RgbImage) -> HashMap<(u8, u8, u8), Vec<(f64, f64)>> {
     result
 }
 
-fn render_home<'a>() -> Paragraph<'a> {
-    let home = Paragraph::new(vec![
-        Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("Welcome")]),
-        Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("to")]),
-        Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::styled(
-            "pet-CLI",
-            Style::default().fg(Color::LightBlue),
-        )]),
-        Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("Press 'p' to access pets, 'a' to add random new pets and 'd' to delete the currently selected pet.")]),
-    ])
-    .alignment(Alignment::Center)
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .style(Style::default().fg(Color::White))
-            .title("Home")
-            .border_type(BorderType::Plain),
-    );
-    return home;
-}
+// fn render_home<'a>() -> Paragraph<'a> {
+//     let home = Paragraph::new(vec![
+//         Spans::from(vec![Span::raw("")]),
+//         Spans::from(vec![Span::raw("Welcome")]),
+//         Spans::from(vec![Span::raw("")]),
+//         Spans::from(vec![Span::raw("to")]),
+//         Spans::from(vec![Span::raw("")]),
+//         Spans::from(vec![Span::styled(
+//             "pet-CLI",
+//             Style::default().fg(Color::LightBlue),
+//         )]),
+//         Spans::from(vec![Span::raw("")]),
+//         Spans::from(vec![Span::raw("Press 'p' to access pets, 'a' to add random new pets and 'd' to delete the currently selected pet.")]),
+//     ])
+//     .alignment(Alignment::Center)
+//     .block(
+//         Block::default()
+//             .borders(Borders::ALL)
+//             .style(Style::default().fg(Color::White))
+//             .title("Home")
+//             .border_type(BorderType::Plain),
+//     );
+//     return home;
+// }
 
 // fn read_db() -> Result<Vec<Pet>, Error> {
 //     let db_content = fs::read_to_string(DB_PATH)?;

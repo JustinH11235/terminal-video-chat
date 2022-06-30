@@ -1,13 +1,19 @@
-use tokio::{net::TcpListener, sync::broadcast, io::{BufReader, AsyncReadExt}, io::AsyncBufReadExt, io::AsyncWriteExt};
 use serde::{Deserialize, Serialize};
+use tokio::{
+    io::AsyncBufReadExt,
+    io::AsyncWriteExt,
+    io::{AsyncReadExt, BufReader},
+    net::TcpListener,
+    sync::broadcast,
+};
 
 // impl as_bytes if needed
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ChatData {
     // HelloLan(String, u16),                     // user_name, server_port
     // HelloUser(String),                         // user_name
-    ChatMessage(String),                          // content
-    // Video(Option<(Vec<RGB8>, usize, usize)>), // Option of (stream_data, width, height ) None means stream has ended
+    ChatMessage(String), // content
+                         // Video(Option<(Vec<RGB8>, usize, usize)>), // Option of (stream_data, width, height ) None means stream has ended
 }
 
 fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
@@ -38,7 +44,7 @@ async fn main() {
         // if you put this above you get all the messages in the queue that came since the last client connected
         let tx = tx_orig.clone();
         let mut rx = tx.subscribe();
-        
+
         tokio::spawn(async move {
             let (reader, mut writer) = socket.split();
             let mut buf_reader = BufReader::new(reader);
@@ -95,8 +101,17 @@ async fn main() {
                     }
                     res = rx.recv() => {
                         let (msg, incoming_addr) = res.expect("has errors for running behind, or senders dropped, handle properly");
-                        
+
                         if addr != incoming_addr {
+                            match msg {
+                                ChatData::ChatMessage(_) => {
+                                    let res = convert_to_stream_data(&msg);
+                                    writer.write_all(&res).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
+                                }
+                                // ChatData::Image(_image) => panic!("Image Not Implemented")
+                            }
+                        } else {
+                            // special ReturnToSender response
                             match msg {
                                 ChatData::ChatMessage(_) => {
                                     let res = convert_to_stream_data(&msg);

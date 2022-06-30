@@ -8,11 +8,19 @@ Graphics options:
 - 
 
 Todos:
-- Make video panes use .inner() of video_area border
-- Make chat history list selectable and scrollable (is scroll bar possible?) Let users toggle focused window, Up Down should be same keys for every screen, focused screen is what action is done to.
-- Make messages show as pending on client side (maybe greyed out), and update with info sent from server after
-- Refactor common TCP util functions into common place
-- 
+
+Client:
+- [x] Make video panes use .inner() of video_area border
+- [x] Make chat history list selectable and scrollable
+- [ ] Visually show cursor in input box (when focused only in future)
+- [ ] Let mouse scroll work as Up/Down, maybe allow clicking?
+- [ ] Let users toggle focused window, Up Down should be same keys for every screen, focused screen is what action is done to.
+- [ ] Make messages show as pending on client side (maybe greyed out), and update with info sent from server after
+
+Server:
+- [ ] Send ReturnToSender response to message originator with updated information of what other users received.
+- [ ] Refactor common TCP util functions into common place
+- [ ] Create chat rooms, with shareable names and passcodes instead of everyone connecting to the same room (maybe keep the general room for fun?)
 
 ### My Data Transfer Protocol
 ```
