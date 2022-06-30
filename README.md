@@ -3,7 +3,10 @@
 Todos:
 
 Client:
+- [x] Add places for video and chat history/chat input
 - [x] Make video panes use .inner() of video_area border
+- [x] Add ability to provide keyboard input into chat input
+- [x] Display received messages in chat history
 - [x] Make chat history list selectable and scrollable
 - [ ] Visually show cursor in input box (when focused only in future)
 - [ ] Let mouse scroll work as Up/Down, maybe allow clicking?
@@ -14,6 +17,9 @@ Client:
 - [ ] Full resolution images on supported terminals such as Kitty (likely through Viuer, potentially need to write a custom tui-rs Widget to correctly integrate, otherwise just overlay on top in right place which is kinda jank)
 
 Server:
+- [x] Create basic string-only chat server (use telnet as client)
+- [x] Use Tokio async to process each client on a different thread with messaging queues to communicate between them
+- [x] Generalize to send/receive any format of data by creating custom TCP data transfer protocol
 - [ ] Send ReturnToSender response to message originator with updated information of what other users received.
 - [ ] Refactor common TCP util functions into common place
 - [ ] Create chat rooms, with shareable names and passcodes instead of everyone connecting to the same room (maybe keep the general room for fun?)
