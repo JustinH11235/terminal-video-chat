@@ -11,6 +11,7 @@ Client:
 - [ ] Make messages show as pending on client side (maybe greyed out), and update with info sent from server after
 - [ ] Make chat input drop to next line if first line is full, maybe allow it to take up a \% of chat area, either way make it scrollable like chat history
 - [ ] Optimize video frame => terminal pixel algorithm for speed & double vertical resolution using half-block chars (potentially dynamically change sampling resolution to achieve desired FPS) (ideally pass around max resolution that server accepts if possible, but downsample on client as necessary)
+- [ ] Full resolution images on supported terminals such as Kitty (likely through Viuer, potentially need to write a custom tui-rs Widget to correctly integrate, otherwise just overlay on top in right place which is kinda jank)
 
 Server:
 - [ ] Send ReturnToSender response to message originator with updated information of what other users received.
@@ -23,7 +24,7 @@ Graphics options:
 - Color in background, gives us rectangle pixels
 - Use half-blocks like viu -b, gives us blurry but decent picture, can try to get viuer working or just copy tui-image and improve with half blocks
 - Use braille pixels from Canvas library, gives us rectangle pixels but stylized
-- viuer, won't be able to integrate as widget for custom kitty graphics, but could overlay on top if I figure out why my thread is breaking it
+- viuer (benefit is on custom graphics terminal emulators like Kitty, we can have full resolution images!!!), won't be able to integrate as widget for custom kitty graphics, but could overlay on top if I figure out why my thread is breaking it
 - 
 
 Ideas for optimizing speed of video transfer:
