@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     writer.write_all(&mess_data).await?;
 
     let tx1 = tx.clone();
-    let user_input_handler = thread::spawn(move || {
+    let _user_input_handler = thread::spawn(move || {
         let mut last_tick = Instant::now();
         loop {
             let timeout = tick_rate
@@ -122,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     let tx2 = tx.clone();
-    let server_input_handler = tokio::spawn(async move {
+    let _server_input_handler = tokio::spawn(async move {
         loop {
             // get incoming message from client
             let res = buf_reader.read_u64().await;
@@ -339,6 +339,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match rx.recv()? {
             Event::UserInput(event) => match event.code {
                 // check for ctrl vs no ctrl modifier, ctrl-C/D should quit also
+                // ctrl-Q/ESC should quit to main menu once we have rooms setup
                 KeyCode::Char('q') => {
                     let mut stdout = io::stdout();
                     execute!(stdout, LeaveAlternateScreen)?;
@@ -349,7 +350,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 KeyCode::Char(c) => {
                     // create helper function to, when pushing a char (unless in insert mode), always move cursor one right
-                    current_input.push(c);
+                    current_input.insert(current_chat_input_index, c);
                     current_chat_input_index += 1;
                 }
                 KeyCode::Backspace => {
@@ -374,7 +375,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     current_input.clear();
                     current_chat_input_index = 0;
                 }
-                KeyCode::Up => {}
+                KeyCode::Up => {
+                    if let Some(selected_ind) = chat_history_selected_ind {
+                        if selected_ind > 0 {
+                            chat_history_selected_ind = Some(selected_ind - 1);
+                            // since terminal.draw has access to space available for chat history, we do the logic for changing chat_history_start_index there
+                        }
+                    } else if chat_history.len() > 0 {
+                        // should never be needed since when a new chat message is added we update selected_ind
+                        chat_history_selected_ind = Some(0);
+                    }
+                }
                 KeyCode::Down => {
                     if let Some(selected_ind) = chat_history_selected_ind {
                         if selected_ind + 1 < chat_history.len() {
@@ -388,9 +399,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 KeyCode::Right => {
                     // move input cursor right (if chat input is focoused)
+                    if current_chat_input_index < current_input.len() {
+                        current_chat_input_index += 1;
+                    }
                 }
                 KeyCode::Left => {
                     // move input cursor left (if chat input is focused)
+                    if current_chat_input_index > 0 {
+                        current_chat_input_index -= 1;
+                    }
                 }
                 _ => {}
             },
