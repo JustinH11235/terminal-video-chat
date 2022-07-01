@@ -8,14 +8,15 @@ Client:
 - [x] Add ability to provide keyboard input into chat input
 - [x] Display received messages in chat history
 - [x] Make chat history list selectable and scrollable
-- [ ] Visually show cursor in input box (when focused only in future)
+- [x] Visually show cursor in input box (when focused only in future)
 - [ ] Let mouse scroll work as Up/Down, maybe allow clicking?
 - [ ] Let users toggle focused window, Up Down should be same keys for every screen, focused screen is what action is done to.
 - [ ] Make messages show as pending on client side (maybe greyed out), and update with info sent from server after
-- [ ] Make chat input drop to next line if first line is full, maybe allow it to take up a \% of chat area, either way make it scrollable like chat history
+- [x] Make chat input scroll left/right using Paragraph .scroll
 - [ ] Optimize video frame => terminal pixel algorithm for speed & double vertical resolution using half-block chars (potentially dynamically change sampling resolution to achieve desired FPS) (ideally pass around max resolution that server accepts if possible, but downsample on client as necessary)
 - [ ] Full resolution images on supported terminals such as Kitty (likely through Viuer, potentially need to write a custom tui-rs Widget to correctly integrate, otherwise just overlay on top in right place which is kinda jank)
-- [ ] Recognize when disconnected from server, potentially try to reconnect and if fail, return to main menu (ideally with error message banner at top) 
+- [ ] Recognize when disconnected from server, potentially try to reconnect and if fail, return to main menu (ideally with error message banner at top)
+- [ ] Allow text in chat history to display as multiple lines if needed
 
 Server:
 - [x] Create basic string-only chat server (use telnet as client)

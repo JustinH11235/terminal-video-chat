@@ -21,8 +21,10 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 use thiserror::Error;
-use tui::widgets::canvas::{Canvas, Points};
-use tui::widgets::Widget;
+use tui::widgets::{
+    canvas::{Canvas, Points},
+    Wrap,
+};
 use tui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -33,6 +35,7 @@ use tui::{
     },
     Terminal,
 };
+use tui::{text::Text, widgets::Widget};
 use viuer::{print_from_file, Config};
 
 use image::RgbImage;
@@ -174,6 +177,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
+    terminal.hide_cursor()?;
 
     let mut chat_history: Vec<String> = Vec::with_capacity(8);
     let mut current_input = String::with_capacity(16);
@@ -185,6 +189,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     chat_history_list_state.select(None);
 
     let mut current_chat_input_index: usize = 0;
+    let mut current_chat_input_scroll_index: u16 = 0;
 
     // println!("start get colors");
     let img_path = "test_image.jpg";
@@ -331,14 +336,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut chat_history_list_state,
             );
 
-            let chat_input_items = vec![ListItem::new(vec![Spans::from(current_input.clone())])]; // use Paragraph instead of list
-            let chat_input_widget = List::new(chat_input_items)
-                .style(Style::default().fg(Color::Rgb(255, 150, 150)))
-                .block(Block::default().style(Style::default().fg(Color::White)));
-            screen_area.set_cursor(
-                chat_input_area.x + current_chat_input_index as u16,
-                chat_input_area.y,
-            );
+            if current_chat_input_index < current_chat_input_scroll_index as usize {
+                // we need to scroll to the left
+                current_chat_input_scroll_index = current_chat_input_index as u16;
+            } else if current_chat_input_index
+                >= (current_chat_input_scroll_index + chat_input_area.width) as usize
+            {
+                // we need to scroll to the right
+                current_chat_input_scroll_index =
+                    current_chat_input_index as u16 - chat_input_area.width + 1;
+            }
+
+            let chat_input_widget = Paragraph::new(current_input.clone())
+                .block(Block::default().style(Style::default().fg(Color::Rgb(255, 150, 150))))
+                .scroll((0, current_chat_input_scroll_index));
+
+            if chat_input_area.height > 0 {
+                screen_area.set_cursor(
+                    chat_input_area.x + current_chat_input_index as u16
+                        - current_chat_input_scroll_index,
+                    chat_input_area.y,
+                );
+            }
+
             screen_area.render_widget(chat_input_widget, chat_input_area);
         })?;
 
