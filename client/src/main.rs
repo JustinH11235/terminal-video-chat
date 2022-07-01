@@ -289,14 +289,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // update visible window only if chat history is non-empty
             if let Some(selected_ind) = chat_history_selected_ind {
-                // if selected_ind is out of bounds of visible window (it will be within bounds of chat_history), move visible window to be within bounds
-                if selected_ind >= chat_history_start_index + chat_history_area_len {
-                    chat_history_start_index = selected_ind - chat_history_area_len + 1;
-                } else if selected_ind < chat_history_start_index {
-                    chat_history_start_index = selected_ind;
+                if chat_history_area_len > 0 {
+                    // if selected_ind is out of bounds of visible window (it will be within bounds of chat_history), move visible window to be within bounds
+                    if selected_ind >= chat_history_start_index + chat_history_area_len {
+                        chat_history_start_index = selected_ind - chat_history_area_len + 1;
+                    } else if selected_ind < chat_history_start_index {
+                        chat_history_start_index = selected_ind;
+                    }
+                    // update list state index to match selected_ind
+                    chat_history_list_state.select(Some(selected_ind - chat_history_start_index));
                 }
-                // update list state index to match selected_ind
-                chat_history_list_state.select(Some(selected_ind - chat_history_start_index));
             } else {
                 // update list state index to match selected_ind
                 chat_history_list_state.select(None);
@@ -333,6 +335,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let chat_input_widget = List::new(chat_input_items)
                 .style(Style::default().fg(Color::Rgb(255, 150, 150)))
                 .block(Block::default().style(Style::default().fg(Color::White)));
+            screen_area.set_cursor(
+                chat_input_area.x + current_chat_input_index as u16,
+                chat_input_area.y,
+            );
             screen_area.render_widget(chat_input_widget, chat_input_area);
         })?;
 

@@ -15,6 +15,7 @@ Client:
 - [ ] Make chat input drop to next line if first line is full, maybe allow it to take up a \% of chat area, either way make it scrollable like chat history
 - [ ] Optimize video frame => terminal pixel algorithm for speed & double vertical resolution using half-block chars (potentially dynamically change sampling resolution to achieve desired FPS) (ideally pass around max resolution that server accepts if possible, but downsample on client as necessary)
 - [ ] Full resolution images on supported terminals such as Kitty (likely through Viuer, potentially need to write a custom tui-rs Widget to correctly integrate, otherwise just overlay on top in right place which is kinda jank)
+- [ ] Recognize when disconnected from server, potentially try to reconnect and if fail, return to main menu (ideally with error message banner at top) 
 
 Server:
 - [x] Create basic string-only chat server (use telnet as client)
@@ -25,6 +26,7 @@ Server:
 - [ ] Create chat rooms, with shareable names and passcodes instead of everyone connecting to the same room (maybe keep the general room for fun?)
 - [ ] Add support for sending video frames over TCP socket
 - [ ] Enable server to support 20-50 users in one chat room with video at once (clients only need to render one screen of video at a time), look into higher powered AWS server/load balanced server instances
+- [ ] Add proper error handling, most errors are okay to ignore, just give up sending the message, if possible try to give client some information
 
 Graphics options:
 - Color in background, gives us rectangle pixels
