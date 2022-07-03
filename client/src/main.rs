@@ -10,7 +10,10 @@ use chrono::prelude::*;
 use crossterm::{
     event::{self, Event as CEvent, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
+        LeaveAlternateScreen,
+    },
 };
 use rand::{distributions::Alphanumeric, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -38,12 +41,14 @@ use tui::{
 use tui::{text::Text, widgets::Widget};
 use viuer::{print_from_file, Config};
 
-use image::RgbImage;
+use image::{codecs::jpeg::JpegDecoder, io::Reader, ImageBuffer, RgbImage, Rgba};
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::path::Path;
 
 use tui_image::{ColorMode, Image};
 
+use rscam::{Camera, Config as RscamConfig, Frame};
 // use nokhwa::{Camera, CameraFormat, FrameFormat};
 
 // #[derive(Serialize, Deserialize, Clone)]
@@ -56,7 +61,8 @@ use tui_image::{ColorMode, Image};
 // }
 
 enum Event {
-    UserInput(crossterm::event::KeyEvent),
+    UserInputKey(crossterm::event::KeyEvent),
+    UserInputFrame(Frame),
     ServerInput(ChatData),
     Tick,
 }
@@ -80,8 +86,8 @@ enum Event {
 pub enum ChatData {
     // HelloLan(String, u16),                     // user_name, server_port
     // HelloUser(String),                         // user_name
-    ChatMessage(String), // content
-                         // Video(Option<(Vec<RGB8>, usize, usize)>), // Option of (stream_data, width, height ) None means stream has ended
+    ChatMessage(String),           // content
+    VideoFrame(Vec<u8>, u32, u32), // Video(Option<(Vec<RGB8>, usize, usize)>), // Option of (stream_data, width, height ) None means stream has ended
 }
 
 fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
@@ -93,9 +99,9 @@ fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx, rx) = mpsc::channel();
-    let tick_rate = Duration::from_millis(200);
+    let tick_rate = Duration::from_millis(67);
 
-    let mess = ChatData::ChatMessage(String::from("test message from client"));
+    // let mess = ChatData::ChatMessage(String::from("test message from client"));
     let stream = TcpStream::connect("127.0.0.1:8080").await?;
     let (reader, mut writer) = stream.into_split();
     let mut buf_reader = BufReader::new(reader);
@@ -105,6 +111,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tx1 = tx.clone();
     let _user_input_handler = thread::spawn(move || {
+        let mut camera = Camera::new("/dev/video0").unwrap();
+        camera
+            .start(&RscamConfig {
+                interval: (1, 15),
+                resolution: (176, 144),
+                format: b"MJPG",
+                ..Default::default()
+            })
+            .unwrap();
         let mut last_tick = Instant::now();
         loop {
             let timeout = tick_rate
@@ -113,7 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if event::poll(timeout).expect("poll works") {
                 if let CEvent::Key(key) = event::read().expect("can read events") {
-                    tx1.send(Event::UserInput(key)).expect("can send events");
+                    tx1.send(Event::UserInputKey(key)).expect("can send events");
                 }
             }
 
@@ -122,12 +137,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     last_tick = Instant::now();
                 }
             }
+
+            let frame = camera.capture().unwrap();
+            tx1.send(Event::UserInputFrame(frame))
+                .expect("can send events");
+            // let frame_data = convert_to_stream_data(&ChatData::VideoFrame(frame.to_vec(), , ));
+            // writer.write_all(&frame_data).await?;
         }
     });
     let tx2 = tx.clone();
     let _server_input_handler = tokio::spawn(async move {
         loop {
-            // get incoming message from client
+            // get incoming message from server
             let res = buf_reader.read_u64().await;
             match res {
                 Ok(size) => {
@@ -143,6 +164,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     tx2.send(Event::ServerInput(ChatData::ChatMessage(msg)))
                                         .unwrap();
                                 }
+                                ChatData::VideoFrame(data, width, height) => tx2
+                                    .send(Event::ServerInput(ChatData::VideoFrame(
+                                        data, width, height,
+                                    )))
+                                    .unwrap(),
                                 _ => {
                                     println!("dont know what chat_data is");
                                 }
@@ -179,10 +205,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     terminal.clear()?;
     terminal.hide_cursor()?;
 
+    let mut video_frames: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = Vec::new();
+
     let mut chat_history: Vec<String> = Vec::with_capacity(8);
     let mut current_input = String::with_capacity(16);
 
-    let mut chat_history_prev_width = 0;
+    // let mut chat_history_prev_width = 0;
     let mut chat_history_stick_to_bottom = true;
 
     // let mut chat_history_line_start_index: usize = 0;
@@ -206,6 +234,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("finished getting colors");
 
     let img = image::open(img_path)?.to_rgba8();
+    video_frames.push(img);
 
     // loop {}
     // return Ok(());
@@ -265,19 +294,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .border_type(BorderType::Double)
                 .style(Style::default().bg(Color::Black));
             screen_area.render_widget(video_frame.clone(), video_area);
-            let num_video_panes = 2;
+
+            let num_video_panes: usize = 2;
             let video_panes = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints(
-                    [Constraint::Percentage(100 / num_video_panes)]
+                    [Constraint::Percentage((100 / num_video_panes) as u16)]
                         .repeat(num_video_panes.into())
                         .as_ref(),
                 )
                 .split(video_frame.inner(video_area));
-            for video_pane in video_panes {
-                let img = img.clone();
-                screen_area
-                    .render_widget(Image::with_img(img).color_mode(ColorMode::Rgb), video_pane);
+            for (ind, video_pane) in video_panes.iter().enumerate() {
+                if ind < video_frames.len() {
+                    screen_area.render_widget(
+                        Image::with_img(video_frames.get(ind).unwrap().to_owned())
+                            .color_mode(ColorMode::Rgb),
+                        *video_pane,
+                    );
+                }
             }
 
             let chat_frame = Block::default()
@@ -434,7 +468,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })?;
 
         match rx.recv()? {
-            Event::UserInput(event) => match event.code {
+            Event::UserInputKey(event) => match event.code {
                 // check for ctrl vs no ctrl modifier, ctrl-C/D should quit also
                 // ctrl-Q/ESC should quit to main menu once we have rooms setup
                 KeyCode::Char('q') => {
@@ -516,6 +550,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => {}
             },
+            Event::UserInputFrame(frame) => {
+                let frame_data = convert_to_stream_data(&ChatData::VideoFrame(
+                    frame[..].to_vec(),
+                    frame.resolution.0,
+                    frame.resolution.1,
+                ));
+                writer.write_all(&frame_data).await?;
+            }
             Event::ServerInput(chat_data) => match chat_data {
                 ChatData::ChatMessage(chat_message) => {
                     // make this a helper function so we don't forget to update selected_ind
@@ -531,9 +573,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     //     chat_history_selected_ind = Some(0);
                     // }
                 }
+                ChatData::VideoFrame(data, width, height) => {
+                    // println!("got frame with {} {}", width, height);
+                    // RgbImage::from
+                    // println!("{} {}", width * height, data.len());
+                    let c = Cursor::new(data.clone());
+                    let r = Reader::new(c);
+                    let img = r.with_guessed_format().unwrap().decode().unwrap();
+                    // let temp = JpegDecoder::new(r);
+                    video_frames.insert(
+                        1,
+                        img.to_rgba8(), // ImageBuffer::from_raw(width, height, data)
+                                        //     .expect("given frame buffer is not big enough"),
+                    );
+                }
             },
             Event::Tick => {}
         }
+
         // break;
         // thread::sleep(Duration::from_micros(15000));
     }

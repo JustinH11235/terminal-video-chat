@@ -12,8 +12,8 @@ use tokio::{
 pub enum ChatData {
     // HelloLan(String, u16),                     // user_name, server_port
     // HelloUser(String),                         // user_name
-    ChatMessage(String), // content
-                         // Video(Option<(Vec<RGB8>, usize, usize)>), // Option of (stream_data, width, height ) None means stream has ended
+    ChatMessage(String),           // content
+    VideoFrame(Vec<u8>, u32, u32), // Video(Option<(Vec<RGB8>, usize, usize)>), // Option of (stream_data, width, height ) None means stream has ended
 }
 
 fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
@@ -56,6 +56,7 @@ async fn main() {
                     res = buf_reader.read_u64() => {
                         match res {
                             Ok(size) => {
+                                println!("got data size {}", size);
                                 let mut buf = vec![0u8; size as usize];
                                 let res = buf_reader.read_exact(&mut buf).await;
                                 match res {
@@ -65,6 +66,9 @@ async fn main() {
                                             ChatData::ChatMessage(msg) => {
                                                 println!("got message: \"{msg}\" from: {}", addr);
                                                 tx.send((ChatData::ChatMessage(msg), addr)).unwrap();
+                                            }
+                                            ChatData::VideoFrame(data, width, height) => {
+                                                tx.send((ChatData::VideoFrame(data, width, height), addr)).unwrap();
                                             }
                                             _ => {
                                                 println!("dont know what chat_data is");
@@ -108,12 +112,20 @@ async fn main() {
                                     let res = convert_to_stream_data(&msg);
                                     writer.write_all(&res).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
                                 }
+                                ChatData::VideoFrame(_, _, _) => {
+                                    let res = convert_to_stream_data(&msg);
+                                    writer.write_all(&res).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
+                                }
                                 // ChatData::Image(_image) => panic!("Image Not Implemented")
                             }
                         } else {
                             // special ReturnToSender response
                             match msg {
                                 ChatData::ChatMessage(_) => {
+                                    let res = convert_to_stream_data(&msg);
+                                    writer.write_all(&res).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
+                                }
+                                ChatData::VideoFrame(_, _, _) => {
                                     let res = convert_to_stream_data(&msg);
                                     writer.write_all(&res).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
                                 }

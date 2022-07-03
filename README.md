@@ -29,7 +29,7 @@ Server:
 - [ ] Send ReturnToSender response to message originator with updated information of what other users received.
 - [ ] Refactor common TCP util functions into common place
 - [ ] Create chat rooms, with shareable names and passcodes instead of everyone connecting to the same room (maybe keep the general room for fun?)
-- [ ] Add support for sending video frames over TCP socket
+- [x] Add support for sending video frames over TCP socket
 - [ ] Enable server to support 20-50 users in one chat room with video at once (clients only need to render one screen of video at a time), look into higher powered AWS server/load balanced server instances
 - [ ] Add proper error handling, most errors are okay to ignore, just give up sending the message, if possible try to give client some information
 - [ ] Support transfering of audio streams
