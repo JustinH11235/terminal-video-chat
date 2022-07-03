@@ -17,6 +17,10 @@ Client:
 - [ ] Full resolution images on supported terminals such as Kitty (likely through Viuer, potentially need to write a custom tui-rs Widget to correctly integrate, otherwise just overlay on top in right place which is kinda jank)
 - [ ] Recognize when disconnected from server, potentially try to reconnect and if fail, return to main menu (ideally with error message banner at top)
 - [ ] Allow text in chat history to display as multiple lines if needed
+- [x] Use [`Textwrap`](https://github.com/mgeisler/textwrap) to nicely wrap text (`tui-rs` Paragraph.wrap() is not good enough, because I don't know how many lines it transforms each message into)
+- [ ] Process chat history per message and maintain a selected message so if window changes you stay on the same message.
+- [ ] Support audio streaming
+- [ ] Use `cfonts` to allow users to zoom out window and still be able to see chat/input (once text is no longer easily visible, switch to cfonts UI mode)
 
 Server:
 - [x] Create basic string-only chat server (use telnet as client)
@@ -28,6 +32,7 @@ Server:
 - [ ] Add support for sending video frames over TCP socket
 - [ ] Enable server to support 20-50 users in one chat room with video at once (clients only need to render one screen of video at a time), look into higher powered AWS server/load balanced server instances
 - [ ] Add proper error handling, most errors are okay to ignore, just give up sending the message, if possible try to give client some information
+- [ ] Support transfering of audio streams
 
 Graphics options:
 - Color in background, gives us rectangle pixels
@@ -36,8 +41,13 @@ Graphics options:
 - viuer (benefit is on custom graphics terminal emulators like Kitty, we can have full resolution images!!!), won't be able to integrate as widget for custom kitty graphics, but could overlay on top if I figure out why my thread is breaking it
 - 
 
+Audio options:
+- `rodio` (seems like the best, wrapper around `cpal`)
+- `cpal` (low level Rust API)
+- `rust-portaudio` (C++) wrapper
+
 Ideas for optimizing speed of video transfer:
-- Have client tell server which id's/addresses it wants the latest video frame of (might be slow because it has to go client => server ===> client)
+- Have client tell server which id's/addresses it wants the latest video frame of (aka full-duplex) (might be slow because it has to go client => server ===> client)
 - Have server maintain a list of requested video frames from each client and only send those frames, this means it just has to go server ===> client, and only rarely does client update list on server
 - Put video frames in queue to be processed by threads on client? Throw away if id/addr is not being currently shown
 

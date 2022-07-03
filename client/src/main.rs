@@ -14,12 +14,12 @@ use crossterm::{
 };
 use rand::{distributions::Alphanumeric, prelude::*};
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::io;
 use std::io::Write;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
+use std::{borrow::Cow, fs};
 use thiserror::Error;
 use tui::widgets::{
     canvas::{Canvas, Points},
@@ -100,8 +100,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (reader, mut writer) = stream.into_split();
     let mut buf_reader = BufReader::new(reader);
 
-    let mess_data = convert_to_stream_data(&mess);
-    writer.write_all(&mess_data).await?;
+    // let mess_data = convert_to_stream_data(&mess);
+    // writer.write_all(&mess_data).await?;
 
     let tx1 = tx.clone();
     let _user_input_handler = thread::spawn(move || {
@@ -182,11 +182,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat_history: Vec<String> = Vec::with_capacity(8);
     let mut current_input = String::with_capacity(16);
 
-    // note distinction that start_index is state only used by terminal.draw
-    let mut chat_history_start_index: usize = 0;
-    let mut chat_history_selected_ind: Option<usize> = None;
-    let mut chat_history_list_state = ListState::default();
-    chat_history_list_state.select(None);
+    let mut chat_history_prev_width = 0;
+    let mut chat_history_stick_to_bottom = true;
+
+    // let mut chat_history_line_start_index: usize = 0;
+    // let mut chat_history_message_index: usize = 0;
+    let mut chat_history_message_line_index: usize = 0;
+    // let mut chat_history_line_offset: i64 = 0;
+
+    // let mut chat_history_selected_ind: Option<usize> = None;
+    // let mut chat_history_list_state = ListState::default();
+    // chat_history_list_state.select(None);
 
     let mut current_chat_input_index: usize = 0;
     let mut current_chat_input_scroll_index: u16 = 0;
@@ -290,51 +296,116 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let chat_history_area = chat_sections[0];
             let chat_input_area = chat_sections[1];
 
-            let chat_history_area_len = chat_history_area.height as usize;
+            let chat_history_area_height = chat_history_area.height as usize;
+            let chat_history_area_width = chat_history_area.width as usize;
+            if chat_history_area_height > 0 && chat_history_area_width > 0 {
+                let chat_history_lines: Vec<_> = chat_history
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(ind, chat_msg)| {
+                        textwrap::wrap(chat_msg, chat_history_area_width)
+                            .iter()
+                            .map(|t| {
+                                Spans::from(Span::styled(
+                                    t.clone().into_owned(),
+                                    Style::default().bg(if ind & 1 == 0 {
+                                        Color::Gray
+                                    } else {
+                                        Color::Yellow
+                                    }),
+                                ))
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect(); // only map as needed in future, alternate colors of messages in future
 
-            // update visible window only if chat history is non-empty
-            if let Some(selected_ind) = chat_history_selected_ind {
-                if chat_history_area_len > 0 {
-                    // if selected_ind is out of bounds of visible window (it will be within bounds of chat_history), move visible window to be within bounds
-                    if selected_ind >= chat_history_start_index + chat_history_area_len {
-                        chat_history_start_index = selected_ind - chat_history_area_len + 1;
-                    } else if selected_ind < chat_history_start_index {
-                        chat_history_start_index = selected_ind;
-                    }
-                    // update list state index to match selected_ind
-                    chat_history_list_state.select(Some(selected_ind - chat_history_start_index));
+                // force chat_history_message_line_index within bounds
+                if chat_history_stick_to_bottom
+                    || chat_history_message_line_index + chat_history_area_height
+                        > chat_history_lines.len()
+                {
+                    chat_history_message_line_index = chat_history_lines
+                        .len()
+                        .saturating_sub(chat_history_area_height);
+                    chat_history_stick_to_bottom = true;
                 }
-            } else {
-                // update list state index to match selected_ind
-                chat_history_list_state.select(None);
+
+                let chat_history_items: Vec<ListItem> = chat_history_lines
+                    .get(
+                        chat_history_message_line_index
+                            ..std::cmp::min(
+                                chat_history_message_line_index + chat_history_area_height,
+                                chat_history_lines.len(),
+                            ),
+                    )
+                    .unwrap()
+                    .iter()
+                    .map(|chat_msg| ListItem::new(chat_msg.clone()))
+                    .collect();
+                let chat_history_widget = List::new(chat_history_items)
+                    .style(Style::default().fg(Color::Black))
+                    .block(Block::default().style(Style::default().fg(Color::White)));
+                screen_area.render_widget(chat_history_widget, chat_history_area);
             }
 
-            let chat_history_items: Vec<ListItem> = chat_history
-                .get(
-                    chat_history_start_index
-                        ..std::cmp::min(
-                            chat_history_start_index + chat_history_area_len,
-                            chat_history.len(),
-                        ),
-                )
-                .unwrap()
-                .iter()
-                .map(|chat_msg| ListItem::new(Spans::from(chat_msg.clone())))
-                .collect();
-            let chat_history_widget = List::new(chat_history_items)
-                .style(Style::default().fg(Color::LightCyan))
-                .block(Block::default().style(Style::default().fg(Color::White)))
-                .highlight_style(
-                    Style::default()
-                        .bg(Color::Yellow)
-                        .fg(Color::Black)
-                        .add_modifier(Modifier::BOLD),
-                );
-            screen_area.render_stateful_widget(
-                chat_history_widget,
-                chat_history_area,
-                &mut chat_history_list_state,
-            );
+            // chat_history_line_offset = 0;
+            // chat_history_prev_width = chat_history_area_width;
+
+            // if message_ind+line_ind is as far down as possible, set chat_history_stick_to_bottom = true
+
+            // use calculated chat_history_line_start_index to create list of up to chat_history_area_height items from chat_history_lines
+
+            // // update visible window only if chat history is non-empty
+            // if let Some(selected_ind) = chat_history_selected_ind {
+            //     if chat_history_area_len > 0 {
+            //         // if selected_ind is out of bounds of visible window (it will be within bounds of chat_history), move visible window to be within bounds
+            //         if selected_ind >=  {
+
+            //         } else if selected_ind < chat_history_start_index {
+
+            //         }
+
+            //         // update list state index to match selected_ind
+            //         // chat_history_list_state.select(Some(selected_ind - chat_history_start_index));
+            //     }
+            // } else {
+            //     // update list state index to match selected_ind
+            //     chat_history_list_state.select(None);
+            // }
+
+            // // let chat_history = textwrap::wrap(
+            // //     "textwrap: an efficient and powerful library for wrapping text.",
+            // //     chat_history_area.width as usize,
+            // // );
+            // let chat_history_items: Vec<ListItem> = chat_history
+            //     .iter()
+            //     .map(|chat_msg| textwrap::wrap(chat_msg, chat_history_area.width as usize))
+            //     .reduce(f)
+            //     // .get(
+            //     //     chat_history_start_index
+            //     //         ..std::cmp::min(
+            //     //             chat_history_start_index + chat_history_area_len,
+            //     //             chat_history.len(),
+            //     //         ),
+            //     // )
+            //     // .unwrap()
+            //     // .iter()
+            //     // .map(|chat_msg| ListItem::new(Text::from(vec![Spans::from(chat_msg.clone())])))
+            //     // .collect();
+            // let chat_history_widget = List::new(chat_history_items)
+            //     .style(Style::default().fg(Color::LightCyan))
+            //     .block(Block::default().style(Style::default().fg(Color::White)))
+            //     .highlight_style(
+            //         Style::default()
+            //             .bg(Color::Yellow)
+            //             .fg(Color::Black)
+            //             .add_modifier(Modifier::BOLD),
+            //     );
+            // screen_area.render_stateful_widget(
+            //     chat_history_widget,
+            //     chat_history_area,
+            //     &mut chat_history_list_state,
+            // );
 
             if current_chat_input_index < current_chat_input_scroll_index as usize {
                 // we need to scroll to the left
@@ -351,7 +422,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .block(Block::default().style(Style::default().fg(Color::Rgb(255, 150, 150))))
                 .scroll((0, current_chat_input_scroll_index));
 
-            if chat_input_area.height > 0 {
+            if chat_input_area.height > 0 && chat_input_area.width > 0 {
                 screen_area.set_cursor(
                     chat_input_area.x + current_chat_input_index as u16
                         - current_chat_input_scroll_index,
@@ -402,26 +473,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     current_chat_input_index = 0;
                 }
                 KeyCode::Up => {
-                    if let Some(selected_ind) = chat_history_selected_ind {
-                        if selected_ind > 0 {
-                            chat_history_selected_ind = Some(selected_ind - 1);
-                            // since terminal.draw has access to space available for chat history, we do the logic for changing chat_history_start_index there
-                        }
-                    } else if chat_history.len() > 0 {
-                        // should never be needed since when a new chat message is added we update selected_ind
-                        chat_history_selected_ind = Some(0);
+                    // chat_history_message_line_index -= 1;
+                    if chat_history_message_line_index > 0 {
+                        chat_history_message_line_index -= 1;
                     }
+                    chat_history_stick_to_bottom = false;
+                    // if let Some(selected_ind) = chat_history_selected_ind {
+                    //     if selected_ind > 0 {
+                    //         chat_history_selected_ind = Some(selected_ind - 1);
+                    //         // since terminal.draw has access to space available for chat history, we do the logic for changing chat_history_start_index there
+                    //     }
+                    // } else if chat_history.len() > 0 {
+                    //     // should never be needed since when a new chat message is added we update selected_ind
+                    //     chat_history_selected_ind = Some(0);
+                    // }
                 }
                 KeyCode::Down => {
-                    if let Some(selected_ind) = chat_history_selected_ind {
-                        if selected_ind + 1 < chat_history.len() {
-                            chat_history_selected_ind = Some(selected_ind + 1);
-                            // since terminal.draw has access to space available for chat history, we do the logic for changing chat_history_start_index there
-                        }
-                    } else if chat_history.len() > 0 {
-                        // should never be needed since when a new chat message is added we update selected_ind
-                        chat_history_selected_ind = Some(0);
-                    }
+                    chat_history_message_line_index += 1;
+                    // let UI keep within bounds
+                    // chat_history_message_line_index += 1;
+                    // if let Some(selected_ind) = chat_history_selected_ind {
+                    //     if selected_ind + 1 < chat_history.len() {
+                    //         chat_history_selected_ind = Some(selected_ind + 1);
+                    //         // since terminal.draw has access to space available for chat history, we do the logic for changing chat_history_start_index there
+                    //     }
+                    // } else if chat_history.len() > 0 {
+                    //     // should never be needed since when a new chat message is added we update selected_ind
+                    //     chat_history_selected_ind = Some(0);
+                    // }
                 }
                 KeyCode::Right => {
                     // move input cursor right (if chat input is focoused)
@@ -441,16 +520,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ChatData::ChatMessage(chat_message) => {
                     // make this a helper function so we don't forget to update selected_ind
                     chat_history.push(chat_message);
-                    // update selected_ind
-                    if let Some(selected_ind) = chat_history_selected_ind {
-                        // keep selected_ind at bottom if user was already at bottom of chat history
-                        if selected_ind == chat_history.len() - 2 {
-                            chat_history_selected_ind = Some(chat_history.len() - 1);
-                        }
-                    } else {
-                        // can put in helper function to share with failsafe, init_selected_ind
-                        chat_history_selected_ind = Some(0);
-                    }
+                    // // update selected_ind
+                    // if let Some(selected_ind) = chat_history_selected_ind {
+                    //     // keep selected_ind at bottom if user was already at bottom of chat history
+                    //     if selected_ind == chat_history.len() - 2 {
+                    //         chat_history_selected_ind = Some(chat_history.len() - 1);
+                    //     }
+                    // } else {
+                    //     // can put in helper function to share with failsafe, init_selected_ind
+                    //     chat_history_selected_ind = Some(0);
+                    // }
                 }
             },
             Event::Tick => {}
@@ -486,168 +565,30 @@ where
     img.to_rgb8()
 }
 
-// pub fn group_by_color(img: RgbImage) -> HashMap<(u8, u8, u8), Vec<(f64, f64)>> {
-//     let mut result = HashMap::<(u8, u8, u8), Vec<(f64, f64)>>::new();
-//     let (_, height) = img.dimensions();
-//     let height = height as i32;
-//     for (x, y, color) in img.enumerate_pixels() {
-//         let x = f64::from(x);
-//         let y = f64::from(height - 1 - (y as i32));
-//         let key = (color[0], color[1], color[2]);
-//         if let Some(origin_value) = result.get(&key) {
-//             let mut value = origin_value.clone();
-//             value.push((x, y));
-//             result.insert(key, value);
-//         } else {
-//             let mut value = Vec::<(f64, f64)>::new();
-//             value.push((x, y));
-//             result.insert(key, value);
+// fn chat_history_move_by(
+//     line_offset: i64,
+//     lines: &Vec<Vec<Cow<str>>>,
+//     message_ind: usize,
+//     line_ind: usize,
+//     area_height: usize,
+// ) -> (usize, usize) {
+//     let mut lines_passed = 0;
+//     if line_offset > 0 {
+//         let lines_after = lines
+//             .get(message_ind..)
+//             .unwrap()
+//             .iter()
+//             .flatten()
+//             .collect::<Vec<_>>()
+//             .len();
+//         for (ind, lines) in lines.get(message_ind..).unwrap().iter().enumerate() {
+//             lines_passed += lines.len();
+//             if lines_passed >= line_offset {
+//                 return (ind, (lines.len() - 1) - (lines_passed - line_offset));
+//             } else if lines_after - lines_passed < area_height {
+//                 return (ind, (lines_after - lines_passed));
+//             }
 //         }
+//     } else if line_offset < 0 {
 //     }
-//     result
-// }
-
-// fn render_home<'a>() -> Paragraph<'a> {
-//     let home = Paragraph::new(vec![
-//         Spans::from(vec![Span::raw("")]),
-//         Spans::from(vec![Span::raw("Welcome")]),
-//         Spans::from(vec![Span::raw("")]),
-//         Spans::from(vec![Span::raw("to")]),
-//         Spans::from(vec![Span::raw("")]),
-//         Spans::from(vec![Span::styled(
-//             "pet-CLI",
-//             Style::default().fg(Color::LightBlue),
-//         )]),
-//         Spans::from(vec![Span::raw("")]),
-//         Spans::from(vec![Span::raw("Press 'p' to access pets, 'a' to add random new pets and 'd' to delete the currently selected pet.")]),
-//     ])
-//     .alignment(Alignment::Center)
-//     .block(
-//         Block::default()
-//             .borders(Borders::ALL)
-//             .style(Style::default().fg(Color::White))
-//             .title("Home")
-//             .border_type(BorderType::Plain),
-//     );
-//     return home;
-// }
-
-// fn read_db() -> Result<Vec<Pet>, Error> {
-//     let db_content = fs::read_to_string(DB_PATH)?;
-//     let parsed: Vec<Pet> = serde_json::from_str(&db_content)?;
-//     return Ok(parsed);
-// }
-
-// fn render_pets<'a>(pet_list_state: &ListState) -> (List<'a>, Table<'a>) {
-//     let pets = Block::default()
-//         .borders(Borders::ALL)
-//         .style(Style::default().fg(Color::White))
-//         .title("Pets")
-//         .border_type(BorderType::Plain);
-
-//     let pet_list = read_db().expect("can fetch pet list");
-//     let items: Vec<_> = pet_list
-//         .iter()
-//         .map(|pet| {
-//             ListItem::new(Spans::from(vec![Span::styled(
-//                 pet.name.clone(),
-//                 Style::default(),
-//             )]))
-//         })
-//         .collect();
-
-//     let selected_pet = pet_list
-//         .get(
-//             pet_list_state
-//                 .selected()
-//                 .expect("there is always a selected pet"),
-//         )
-//         .expect("exists")
-//         .clone();
-
-//     let list = List::new(items).block(pets).highlight_style(
-//         Style::default()
-//             .bg(Color::Yellow)
-//             .fg(Color::Black)
-//             .add_modifier(Modifier::BOLD),
-//     );
-
-//     let pet_detail = Table::new(vec![Row::new(vec![
-//         Cell::from(Span::raw(selected_pet.id.to_string())),
-//         Cell::from(Span::raw(selected_pet.name)),
-//         Cell::from(Span::raw(selected_pet.category)),
-//         Cell::from(Span::raw(selected_pet.age.to_string())),
-//         Cell::from(Span::raw(selected_pet.created_at.to_string())),
-//     ])])
-//     .header(Row::new(vec![
-//         Cell::from(Span::styled(
-//             "ID",
-//             Style::default().add_modifier(Modifier::BOLD),
-//         )),
-//         Cell::from(Span::styled(
-//             "Name",
-//             Style::default().add_modifier(Modifier::BOLD),
-//         )),
-//         Cell::from(Span::styled(
-//             "Category",
-//             Style::default().add_modifier(Modifier::BOLD),
-//         )),
-//         Cell::from(Span::styled(
-//             "Age",
-//             Style::default().add_modifier(Modifier::BOLD),
-//         )),
-//         Cell::from(Span::styled(
-//             "Created At",
-//             Style::default().add_modifier(Modifier::BOLD),
-//         )),
-//     ]))
-//     .block(
-//         Block::default()
-//             .borders(Borders::ALL)
-//             .style(Style::default().fg(Color::White))
-//             .title("Detail")
-//             .border_type(BorderType::Plain),
-//     )
-//     .widths(&[
-//         Constraint::Percentage(5),
-//         Constraint::Percentage(20),
-//         Constraint::Percentage(20),
-//         Constraint::Percentage(5),
-//         Constraint::Percentage(20),
-//     ]);
-
-//     return (list, pet_detail);
-// }
-
-// fn add_random_pet_to_db() -> Result<Vec<Pet>, Error> {
-//     let mut rng = rand::thread_rng();
-//     let db_content = fs::read_to_string(DB_PATH)?;
-//     let mut parsed: Vec<Pet> = serde_json::from_str(&db_content)?;
-//     let catsdogs = match rng.gen_range(0, 1) {
-//         0 => "cats",
-//         _ => "dogs",
-//     };
-
-//     let random_pet = Pet {
-//         id: rng.gen_range(0, 9999999),
-//         name: rng.sample_iter(Alphanumeric).take(10).collect(),
-//         category: catsdogs.to_owned(),
-//         age: rng.gen_range(1, 15),
-//         created_at: Utc::now(),
-//     };
-
-//     parsed.push(random_pet);
-//     fs::write(DB_PATH, &serde_json::to_vec(&parsed)?)?;
-//     Ok(parsed)
-// }
-
-// fn remove_pet_at_index(pet_list_state: &mut ListState) -> Result<(), Error> {
-//     if let Some(selected) = pet_list_state.selected() {
-//         let db_content = fs::read_to_string(DB_PATH)?;
-//         let mut parsed: Vec<Pet> = serde_json::from_str(&db_content)?;
-//         parsed.remove(selected);
-//         fs::write(DB_PATH, &serde_json::to_vec(&parsed)?)?;
-//         pet_list_state.select(Some(selected - 1));
-//     }
-//     Ok(())
 // }

@@ -20,3 +20,4 @@ image = "*"
 tui-image = "0.2.0"
 # nokhwa = { version = "0.9.4", features = ["input-v4l", "default", "output-threaded"] }
 rscam = "0.5.5"
+textwrap = "0.15"
