@@ -1116,8 +1116,6 @@ dependencies = [
 [[package]]
 name = "tui-image"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d1a04d1078c8cf69b939d629a05c4912c1a12ac2edd8e1739011e72328b7e20"
 dependencies = [
  "failure",
  "image",

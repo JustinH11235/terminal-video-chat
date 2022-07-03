@@ -1,0 +1,19 @@
+[package]
+name = "tui-image"
+description = "An image viewer widget for tui-rs"
+homepage = "https://github.com/arraypad/tui-image"
+repository = "https://github.com/arraypad/tui-image"
+version = "0.2.0"
+authors = ["Arpad Ray <arraypad@gmail.com>"]
+edition = "2018"
+license = "MIT"
+keywords = ["terminal", "image", "tui", "widget"]
+
+[dependencies]
+tui = "0.18"
+failure = "0.1"
+image = "0.24"
+
+[dev-dependencies]
+tui = { version = "0.18", default-features = false, features = ['termion'] }
+termion = "1.5"

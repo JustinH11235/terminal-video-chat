@@ -56,7 +56,7 @@ async fn main() {
                     res = buf_reader.read_u64() => {
                         match res {
                             Ok(size) => {
-                                println!("got data size {}", size);
+                                // println!("got data size {}", size);
                                 let mut buf = vec![0u8; size as usize];
                                 let res = buf_reader.read_exact(&mut buf).await;
                                 match res {

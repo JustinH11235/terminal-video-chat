@@ -17,7 +17,8 @@ tui = { version = "0.18", default-features = false, features = ['crossterm', 'se
 thiserror = "1.0"
 viuer = "0.6"
 image = "*"
-tui-image = "0.2.0"
+# tui-image = "0.2.0"
+tui-image = { path = "./tui-image" }
 # nokhwa = { version = "0.9.4", features = ["input-v4l", "default", "output-threaded"] }
 rscam = "0.5.5"
 textwrap = "0.15"
