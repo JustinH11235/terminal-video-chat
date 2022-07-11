@@ -18,7 +18,7 @@ pub enum ChatData {
 
 fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
     let buf = bincode::serialize(chat_data).expect("serialize failed");
-    let buf_with_header = [&(buf.len() as u64).to_be_bytes(), &buf[..]].concat();
+    let buf_with_header = [&(buf.len() as u32).to_be_bytes(), &buf[..]].concat();
     return buf_with_header;
 }
 
@@ -52,7 +52,7 @@ async fn main() {
             loop {
                 tokio::select! {
                     // get incoming message from client
-                    res = buf_reader.read_u64() => {
+                    res = buf_reader.read_u32() => {
                         match res {
                             Ok(size) => {
                                 // println!("got data size {}", size);

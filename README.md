@@ -33,7 +33,7 @@ Server:
 - [ ] Enable server to support 20-50 users in one chat room with video at once (clients only need to render one screen of video at a time), look into higher powered AWS server/load balanced server instances
 - [ ] Add proper error handling, most errors are okay to ignore, just give up sending the message, if possible try to give client some information
 - [ ] Support transfering of audio streams
-- [ ] Support 32-bit operating systems in custom TCP protocol
+- [x] Support 32-bit operating systems in custom TCP protocol
 
 Graphics options:
 - Color in background, gives us rectangle pixels
@@ -56,15 +56,15 @@ Ideas for optimizing speed of video transfer:
 ### My Custom Data Transfer Protocol
 ```
 [ # of bytes of body ][ body (serialized via serde) ]
-[        u64         ][              x              ]
+[        u32         ][              x              ]
 ```
 
 Sending Protocol:
 1. Serialize body of message.
-2. Get the number of bytes of serialized body as a u64.
+2. Get the number of bytes of serialized body as a u32.
 3. Send the concatenation of the number of bytes followed by the serialized body through the TCP socket.
 
 Receiving Protocol:
-1. Read 64 bits from TCP socket.
+1. Read 32 bits from TCP socket.
 2. Use that data as the length of the body and read that number of bytes.
 3. Deserialize body and interpret as common data structure.

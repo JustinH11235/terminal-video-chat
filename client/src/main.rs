@@ -132,7 +132,7 @@ impl ChatMessageInfo {
 // make a method of ChatData
 fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
     let buf = bincode::serialize(chat_data).expect("serialize failed");
-    let buf_with_header = [&(buf.len() as u64).to_be_bytes(), &buf[..]].concat();
+    let buf_with_header = [&(buf.len() as u32).to_be_bytes(), &buf[..]].concat();
     return buf_with_header;
 }
 
@@ -189,7 +189,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _server_input_handler = tokio::spawn(async move {
         loop {
             // get incoming message from server
-            let res = buf_reader.read_u64().await;
+            let res = buf_reader.read_u32().await;
             match res {
                 Ok(size) => {
                     let mut buf = vec![0u8; size as usize];
