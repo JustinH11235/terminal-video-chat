@@ -8,7 +8,7 @@ use tokio::{
 
 use chrono::prelude::*;
 use crossterm::{
-    event::{self, Event as CEvent, KeyCode},
+    event::{self, KeyCode},
     execute,
     terminal::{
         disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
@@ -17,12 +17,13 @@ use crossterm::{
 };
 use rand::{distributions::Alphanumeric, prelude::*};
 use serde::{Deserialize, Serialize};
-use std::io;
+use std::fmt::{self, Display};
 use std::io::Write;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{borrow::Cow, fs};
+use std::{fmt::Debug, io};
 use thiserror::Error;
 use tui::widgets::{
     canvas::{Canvas, Points},
@@ -51,6 +52,8 @@ use tui_image::{ColorMode, Image};
 use rscam::{Camera, Config as RscamConfig, Frame};
 // use nokhwa::{Camera, CameraFormat, FrameFormat};
 
+pub mod util;
+
 // #[derive(Serialize, Deserialize, Clone)]
 // struct Pet {
 //     id: usize,
@@ -67,29 +70,66 @@ enum Event {
     Tick,
 }
 
-// #[derive(Copy, Clone, Debug)]
-// enum MenuItem {
-//     Home,
-//     Pets,
-// }
-
-// impl From<MenuItem> for usize {
-//     fn from(input: MenuItem) -> usize {
-//         match input {
-//             MenuItem::Home => 0,
-//             MenuItem::Pets => 1,
-//         }
-//     }
-// }
-
 #[derive(Serialize, Deserialize)]
 pub enum ChatData {
-    // HelloLan(String, u16),                     // user_name, server_port
-    // HelloUser(String),                         // user_name
-    ChatMessage(String),           // content
-    VideoFrame(Vec<u8>, u32, u32), // Video(Option<(Vec<RGB8>, usize, usize)>), // Option of (stream_data, width, height ) None means stream has ended
+    OtherChatMessage(String),       // message
+    SelfChatMessage(String, usize), // message, id
+    VideoFrame(Vec<u8>, u32, u32),  // (stream_data, width, height)
 }
 
+struct ChatMessageInfo {
+    message: String,
+    is_pending: bool,
+    uid: usize,
+    // author: num or UserStruct
+}
+
+impl fmt::Display for ChatMessageInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "User Temp: {}{}",
+            self.message,
+            if self.is_pending { " (pending...)" } else { "" }
+        )
+    }
+}
+
+impl ChatMessageInfo {
+    fn new_with_uid(message: String, is_pending: bool, uid: usize) -> Self {
+        return ChatMessageInfo {
+            message,
+            is_pending,
+            uid,
+        };
+    }
+
+    fn new(message: String, is_pending: bool) -> Self {
+        return ChatMessageInfo {
+            message,
+            is_pending,
+            uid: util::get_uid(),
+        };
+    }
+
+    fn to_line_spans(&self, line_width: usize) -> Vec<Span> {
+        return textwrap::wrap(&self.to_string(), line_width)
+            .into_iter()
+            .map(|message| {
+                Span::styled(
+                    message.into_owned(),
+                    Style::default().fg(if self.is_pending {
+                        Color::Gray
+                    } else {
+                        Color::White
+                    }),
+                )
+            })
+            .collect::<Vec<_>>();
+    }
+}
+
+// make a method of ChatData
 fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
     let buf = bincode::serialize(chat_data).expect("serialize failed");
     let buf_with_header = [&(buf.len() as u64).to_be_bytes(), &buf[..]].concat();
@@ -127,7 +167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|| Duration::from_secs(0));
 
             if event::poll(timeout).expect("poll works") {
-                if let CEvent::Key(key) = event::read().expect("can read events") {
+                if let crossterm::event::Event::Key(key) = event::read().expect("can read events") {
                     tx1.send(Event::UserInputKey(key)).expect("can send events");
                 }
             }
@@ -158,21 +198,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(bytes_read) if bytes_read == size as usize => {
                             let chat_data =
                                 bincode::deserialize(&buf).expect("deserialize should work");
-                            match chat_data {
-                                ChatData::ChatMessage(msg) => {
-                                    // println!("got message: {msg}");
-                                    tx2.send(Event::ServerInput(ChatData::ChatMessage(msg)))
-                                        .unwrap();
-                                }
-                                ChatData::VideoFrame(data, width, height) => tx2
-                                    .send(Event::ServerInput(ChatData::VideoFrame(
-                                        data, width, height,
-                                    )))
-                                    .unwrap(),
-                                _ => {
-                                    println!("dont know what chat_data is");
-                                }
-                            }
+                            tx2.send(Event::ServerInput(chat_data)).unwrap();
+                            // match chat_data {
+                            //     ChatData::OtherChatMessage(ref _msg) => {
+                            //         // println!("got message: {msg}");
+                            //         tx2.send(Event::ServerInput(chat_data)).unwrap();
+                            //     }
+                            //     ChatData::SelfChatMessage(ref _msg, ref _uid) => {
+                            //         // println!("got message: {msg}");
+                            //         tx2.send(Event::ServerInput(chat_data)).unwrap();
+                            //     }
+                            //     ChatData::VideoFrame(data, width, height) => tx2
+                            //         .send(Event::ServerInput(ChatData::VideoFrame(
+                            //             data, width, height,
+                            //         )))
+                            //         .unwrap(),
+                            //     _ => {
+                            //         println!("dont know what chat_data is");
+                            //     }
+                            // }
                         }
                         Ok(_) => {
                             println!("didn't read right number of bytes");
@@ -207,7 +251,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut video_frames: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = Vec::new();
 
-    let mut chat_history: Vec<String> = Vec::with_capacity(8);
+    let mut chat_history: Vec<ChatMessageInfo> = Vec::with_capacity(8);
     let mut current_input = String::with_capacity(16);
 
     // let mut chat_history_prev_width = 0;
@@ -337,21 +381,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .iter()
                     .enumerate()
                     .flat_map(|(ind, chat_msg)| {
-                        textwrap::wrap(chat_msg, chat_history_area_width)
-                            .iter()
-                            .map(|t| {
-                                Spans::from(Span::styled(
-                                    t.clone().into_owned(),
-                                    Style::default().bg(if ind & 1 == 0 {
-                                        Color::Gray
-                                    } else {
-                                        Color::Yellow
-                                    }),
-                                ))
-                            })
-                            .collect::<Vec<_>>()
+                        let mut line_spans = chat_msg.to_line_spans(chat_history_area_width);
+                        for span in &mut line_spans {
+                            span.style = span.style.bg(if ind & 1 == 0 {
+                                Color::LightMagenta
+                            } else {
+                                Color::LightBlue
+                            });
+                        }
+                        return line_spans;
                     })
-                    .collect(); // only map as needed in future, alternate colors of messages in future
+                    .collect(); // only map as needed in future
 
                 // force chat_history_message_line_index within bounds
                 if chat_history_stick_to_bottom
@@ -497,12 +537,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 KeyCode::Enter => {
                     let user_message = current_input.clone();
+                    // initial add to chat history (will update after server response)
+                    let chat_msg_info = ChatMessageInfo::new(user_message.clone(), true);
+                    let msg_uid = chat_msg_info.uid;
+                    chat_history.push(chat_msg_info);
                     // send to server
                     let mess_data =
-                        convert_to_stream_data(&ChatData::ChatMessage(user_message.clone()));
+                        convert_to_stream_data(&ChatData::SelfChatMessage(user_message, msg_uid));
                     writer.write_all(&mess_data).await?;
-                    // initial add to chat history (will update after server response)
-                    // chat_history.push(user_message);
+                    // reset input field
                     current_input.clear();
                     current_chat_input_index = 0;
                 }
@@ -559,9 +602,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 writer.write_all(&frame_data).await?;
             }
             Event::ServerInput(chat_data) => match chat_data {
-                ChatData::ChatMessage(chat_message) => {
+                ChatData::OtherChatMessage(chat_message) => {
                     // make this a helper function so we don't forget to update selected_ind
-                    chat_history.push(chat_message);
+                    chat_history.push(ChatMessageInfo::new(chat_message, false));
+                    // TODO: order by timestamp
                     // // update selected_ind
                     // if let Some(selected_ind) = chat_history_selected_ind {
                     //     // keep selected_ind at bottom if user was already at bottom of chat history
@@ -573,13 +617,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     //     chat_history_selected_ind = Some(0);
                     // }
                 }
+                ChatData::SelfChatMessage(chat_message, uid) => {
+                    // this is our own message returned from server, update chat_history to display updated info
+                    // remove the placeholder/pending chat message
+                    chat_history.retain(|chat_msg_info| chat_msg_info.uid != uid);
+                    // add up-to-update chat message to chat_history
+                    chat_history.push(ChatMessageInfo::new_with_uid(chat_message, false, uid));
+                }
                 ChatData::VideoFrame(data, width, height) => {
                     // println!("got frame with {} {}", width, height);
                     // RgbImage::from
                     // println!("{} {}", width * height, data.len());
                     let c = Cursor::new(data.clone());
                     let r = Reader::new(c);
-                    let img = r.with_guessed_format().unwrap().decode().unwrap();
+                    let img = r.with_guessed_format().unwrap();
+                    // eprintln!("{:?}", img.format().unwrap());
+                    let img = img.decode().unwrap();
                     // let temp = JpegDecoder::new(r);
                     video_frames.insert(
                         1,

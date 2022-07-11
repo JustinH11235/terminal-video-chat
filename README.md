@@ -13,10 +13,10 @@ Client:
 - [ ] Let users toggle focused window, Up Down should be same keys for every screen, focused screen is what action is done to.
 - [ ] Make messages show as pending on client side (maybe greyed out), and update with info sent from server after
 - [x] Make chat input scroll left/right using Paragraph .scroll
-- [ ] Optimize video frame => terminal pixel algorithm for speed & double vertical resolution using half-block chars (potentially dynamically change sampling resolution to achieve desired FPS) (ideally pass around max resolution that server accepts if possible, but downsample on client as necessary)
+- [x] Optimize video frame => terminal pixel algorithm for speed & double vertical resolution using half-block chars (potentially dynamically change sampling resolution to achieve desired FPS) (ideally pass around max resolution that server accepts if possible, but downsample on client as necessary)
 - [ ] Full resolution images on supported terminals such as Kitty (likely through Viuer, potentially need to write a custom tui-rs Widget to correctly integrate, otherwise just overlay on top in right place which is kinda jank)
 - [ ] Recognize when disconnected from server, potentially try to reconnect and if fail, return to main menu (ideally with error message banner at top)
-- [ ] Allow text in chat history to display as multiple lines if needed
+- [X] Allow text in chat history to display as multiple lines if needed
 - [x] Use [`Textwrap`](https://github.com/mgeisler/textwrap) to nicely wrap text (`tui-rs` Paragraph.wrap() is not good enough, because I don't know how many lines it transforms each message into)
 - [ ] Process chat history per message and maintain a selected message so if window changes you stay on the same message.
 - [ ] Support audio streaming
@@ -33,6 +33,7 @@ Server:
 - [ ] Enable server to support 20-50 users in one chat room with video at once (clients only need to render one screen of video at a time), look into higher powered AWS server/load balanced server instances
 - [ ] Add proper error handling, most errors are okay to ignore, just give up sending the message, if possible try to give client some information
 - [ ] Support transfering of audio streams
+- [ ] Support 32-bit operating systems in custom TCP protocol
 
 Graphics options:
 - Color in background, gives us rectangle pixels
