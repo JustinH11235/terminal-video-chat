@@ -200,14 +200,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tx1 = tx.clone();
     let _user_input_handler = thread::spawn(move || {
         let mut camera = Camera::new("/dev/video0").unwrap();
-        camera
-            .start(&RscamConfig {
-                interval: (1, 15),
-                resolution: (176, 144),
-                format: b"MJPG",
-                ..Default::default()
-            })
-            .unwrap();
+        let camera_available = camera.start(&RscamConfig {
+            interval: (1, 15),
+            resolution: (176, 144),
+            format: b"MJPG",
+            ..Default::default()
+        });
+
         let mut last_tick = Instant::now();
         loop {
             let timeout = tick_rate
@@ -226,9 +225,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            let frame = camera.capture().unwrap();
-            tx1.send(Event::UserInputFrame(frame))
-                .expect("can send events");
+            if camera_available.is_ok() {
+                let frame = camera.capture().unwrap();
+                tx1.send(Event::UserInputFrame(frame))
+                    .expect("can send events");
+            }
         }
     });
     let tx2 = tx.clone();
