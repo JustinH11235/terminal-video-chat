@@ -118,16 +118,16 @@ impl fmt::Display for ChatMessageInfo {
         let (pm, hour) = local_time.hour12();
         let minute = local_time.minute();
         let seconds = local_time.second();
+        let time = format!(
+            "{:0>2}:{:0>2}:{:0>2}{}",
+            hour,
+            minute,
+            seconds,
+            if pm { "PM" } else { "AM" }
+        );
         write!(
             f,
-            "[{}] User Temp: {}{}",
-            format!(
-                "{:0>2}:{:0>2}:{:0>2}{}",
-                hour,
-                minute,
-                seconds,
-                if pm { "PM" } else { "AM" }
-            ),
+            "[{time}] User Temp: {}{}",
             self.message,
             if self.is_pending { " (pending...)" } else { "" }
         )
@@ -645,7 +645,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         false,
                         timestamp,
                     ));
-                    // TODO: order by timestamp
                     // // update selected_ind
                     // if let Some(selected_ind) = chat_history_selected_ind {
                     //     // keep selected_ind at bottom if user was already at bottom of chat history
