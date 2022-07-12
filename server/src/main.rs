@@ -1,3 +1,5 @@
+use chrono::serde::ts_milliseconds;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::AsyncBufReadExt,
@@ -10,14 +12,33 @@ use tokio::{
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ChatData {
+pub struct ServerNetworkData {
+    #[serde(with = "ts_milliseconds")]
+    timestamp: DateTime<Utc>,
+    // user id/struct
+    chat_data: ServerChatData,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ServerChatData {
     OtherChatMessage(String),       // message
     SelfChatMessage(String, usize), // message, id
     VideoFrame(Vec<u8>, u32, u32),  // (stream_data, width, height)
 }
 
-fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
-    let buf = bincode::serialize(chat_data).expect("serialize failed");
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ClientNetworkData {
+    chat_data: ClientChatData,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ClientChatData {
+    SelfChatMessage(String, usize), // message, id
+    VideoFrame(Vec<u8>, u32, u32),  // (stream_data, width, height)
+}
+
+fn convert_to_stream_data(network_data: &ServerNetworkData) -> Vec<u8> {
+    let buf = bincode::serialize(network_data).expect("serialize failed");
     let buf_with_header = [&(buf.len() as u32).to_be_bytes(), &buf[..]].concat();
     return buf_with_header;
 }
@@ -60,24 +81,10 @@ async fn main() {
                                 let res = buf_reader.read_exact(&mut buf).await;
                                 match res {
                                     Ok(bytes_read) if bytes_read == size as usize => {
-                                        let chat_data = bincode::deserialize(&buf).expect("deserialize should work");
-                                        tx.send((chat_data, addr)).unwrap();
-                                        // match chat_data {
-                                        //     ChatData::OtherChatMessage(msg) => {
-                                        //         println!("got message: \"{msg}\" from: {}", addr);
-                                        //         tx.send((C&hatData::OtherChatMessage(msg), addr)).unwrap();
-                                        //     }
-                                        //     ChatData::SelfChatMessage(msg) => {
-                                        //         println!("got message: \"{msg}\" from: {}", addr);
-                                        //         tx.send((ChatData::OtherChatMessage(msg), addr)).unwrap();
-                                        //     }
-                                        //     ChatData::VideoFrame(data, width, height) => {
-                                        //         tx.send((ChatData::VideoFrame(data, width, height), addr)).unwrap();
-                                        //     }
-                                        //     _ => {
-                                        //         println!("dont know what chat_data is");
-                                        //     }
-                                        // }
+                                        let timestamp = chrono::offset::Utc::now();
+                                        let data = bincode::deserialize(&buf).expect("deserialize should work");
+
+                                        tx.send((data, addr, timestamp)).unwrap();
                                     }
                                     Ok(_) => {
                                         println!("didn't read right number of bytes");
@@ -108,40 +115,30 @@ async fn main() {
                         // line.clear();
                     }
                     res = rx.recv() => {
-                        let (msg, incoming_addr) = res.expect("has errors for running behind, or senders dropped, handle properly");
+                        let (data, incoming_addr, timestamp) = res.expect("has errors for running behind, or senders dropped, handle properly");
+                            match data {
+                                ClientNetworkData { chat_data: ClientChatData::SelfChatMessage(message, uid) } => {
+                                    let response =
+                                        if incoming_addr != addr {
+                                            // from another client
+                                            ServerNetworkData { timestamp: timestamp, chat_data: ServerChatData::OtherChatMessage(message) }
+                                        } else {
+                                            // from this client
+                                            ServerNetworkData { timestamp: timestamp, chat_data: ServerChatData::SelfChatMessage(message, uid) }
+                                        };
+                                    let response = convert_to_stream_data(&response);
+                                    writer.write_all(&response).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
+                                }
+                                ClientNetworkData { chat_data: ClientChatData::VideoFrame(data, width, height) } => {
+                                    let response = ServerNetworkData { timestamp: timestamp, chat_data: ServerChatData::VideoFrame(data, width, height)};
+                                    let response = convert_to_stream_data(&response);
+                                    writer.write_all(&response).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
+                                }
+                                _ => {
+                                    println!("Got ClientNetworkData that couldn't be recognized");
+                                }
+                            }
 
-                        if addr != incoming_addr {
-                            // from another client
-                            match msg {
-                                ChatData::SelfChatMessage(message, _uid) => {
-                                    let res = convert_to_stream_data(&ChatData::OtherChatMessage(message));
-                                    writer.write_all(&res).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
-                                }
-                                ChatData::OtherChatMessage(_) => {
-                                    println!("Got OtherChatMessage from client");
-                                }
-                                ChatData::VideoFrame(_, _, _) => {
-                                    let res = convert_to_stream_data(&msg);
-                                    writer.write_all(&res).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
-                                }
-                            }
-                        } else {
-                            // from this client
-                            match msg {
-                                ChatData::SelfChatMessage(_, _) => {
-                                    let res = convert_to_stream_data(&msg);
-                                    // sleep(Duration::from_millis(2000)).await;
-                                    writer.write_all(&res).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
-                                }
-                                ChatData::OtherChatMessage(_) => {
-                                    println!("Got OtherChatMessage from client");
-                                }
-                                ChatData::VideoFrame(_, _, _) => {
-                                    let res = convert_to_stream_data(&msg);
-                                    writer.write_all(&res).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
-                                }
-                            }
-                        }
                     }
                 }
             }

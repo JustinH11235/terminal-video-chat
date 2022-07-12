@@ -1,3 +1,4 @@
+use chrono::serde::ts_milliseconds;
 use tokio::{
     io::AsyncBufReadExt,
     io::AsyncWriteExt,
@@ -66,29 +67,67 @@ pub mod util;
 enum Event {
     UserInputKey(crossterm::event::KeyEvent),
     UserInputFrame(Frame),
-    ServerInput(ChatData),
+    ServerInput(ServerNetworkData),
     Tick,
 }
 
-#[derive(Serialize, Deserialize)]
-pub enum ChatData {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ServerNetworkData {
+    #[serde(with = "ts_milliseconds")]
+    timestamp: DateTime<Utc>,
+    // user id/struct
+    chat_data: ServerChatData,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ServerChatData {
     OtherChatMessage(String),       // message
     SelfChatMessage(String, usize), // message, id
     VideoFrame(Vec<u8>, u32, u32),  // (stream_data, width, height)
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ClientNetworkData {
+    chat_data: ClientChatData,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ClientChatData {
+    SelfChatMessage(String, usize), // message, id
+    VideoFrame(Vec<u8>, u32, u32),  // (stream_data, width, height)
+}
+
+// make a method of ChatData
+fn convert_to_stream_data(network_data: &ClientNetworkData) -> Vec<u8> {
+    let buf = bincode::serialize(network_data).expect("serialize failed");
+    let buf_with_header = [&(buf.len() as u32).to_be_bytes(), &buf[..]].concat();
+    return buf_with_header;
 }
 
 struct ChatMessageInfo {
     message: String,
     is_pending: bool,
     uid: usize,
+    timestamp: DateTime<Utc>,
     // author: num or UserStruct
 }
 
 impl fmt::Display for ChatMessageInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let local_time = Local.from_utc_datetime(&self.timestamp.naive_local());
+        let (pm, hour) = local_time.hour12();
+        let minute = local_time.minute();
+        let seconds = local_time.second();
         write!(
             f,
-            "User Temp: {}{}",
+            "[{}] User Temp: {}{}",
+            format!(
+                "{:0>2}:{:0>2}:{:0>2}{}",
+                hour,
+                minute,
+                seconds,
+                if pm { "PM" } else { "AM" }
+            ),
             self.message,
             if self.is_pending { " (pending...)" } else { "" }
         )
@@ -96,19 +135,35 @@ impl fmt::Display for ChatMessageInfo {
 }
 
 impl ChatMessageInfo {
-    fn new_with_uid(message: String, is_pending: bool, uid: usize) -> Self {
-        return ChatMessageInfo {
-            message,
-            is_pending,
-            uid,
-        };
-    }
-
     fn new(message: String, is_pending: bool) -> Self {
         return ChatMessageInfo {
             message,
             is_pending,
             uid: util::get_uid(),
+            timestamp: chrono::offset::Utc::now(),
+        };
+    }
+
+    fn new_with_all(
+        message: String,
+        is_pending: bool,
+        uid: usize,
+        timestamp: DateTime<Utc>,
+    ) -> Self {
+        return ChatMessageInfo {
+            message,
+            is_pending,
+            uid,
+            timestamp,
+        };
+    }
+
+    fn new_with_timestamp(message: String, is_pending: bool, timestamp: DateTime<Utc>) -> Self {
+        return ChatMessageInfo {
+            message,
+            is_pending,
+            uid: util::get_uid(),
+            timestamp,
         };
     }
 
@@ -127,13 +182,6 @@ impl ChatMessageInfo {
             })
             .collect::<Vec<_>>();
     }
-}
-
-// make a method of ChatData
-fn convert_to_stream_data(chat_data: &ChatData) -> Vec<u8> {
-    let buf = bincode::serialize(chat_data).expect("serialize failed");
-    let buf_with_header = [&(buf.len() as u32).to_be_bytes(), &buf[..]].concat();
-    return buf_with_header;
 }
 
 #[tokio::main]
@@ -181,8 +229,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let frame = camera.capture().unwrap();
             tx1.send(Event::UserInputFrame(frame))
                 .expect("can send events");
-            // let frame_data = convert_to_stream_data(&ChatData::VideoFrame(frame.to_vec(), , ));
-            // writer.write_all(&frame_data).await?;
         }
     });
     let tx2 = tx.clone();
@@ -199,24 +245,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let chat_data =
                                 bincode::deserialize(&buf).expect("deserialize should work");
                             tx2.send(Event::ServerInput(chat_data)).unwrap();
-                            // match chat_data {
-                            //     ChatData::OtherChatMessage(ref _msg) => {
-                            //         // println!("got message: {msg}");
-                            //         tx2.send(Event::ServerInput(chat_data)).unwrap();
-                            //     }
-                            //     ChatData::SelfChatMessage(ref _msg, ref _uid) => {
-                            //         // println!("got message: {msg}");
-                            //         tx2.send(Event::ServerInput(chat_data)).unwrap();
-                            //     }
-                            //     ChatData::VideoFrame(data, width, height) => tx2
-                            //         .send(Event::ServerInput(ChatData::VideoFrame(
-                            //             data, width, height,
-                            //         )))
-                            //         .unwrap(),
-                            //     _ => {
-                            //         println!("dont know what chat_data is");
-                            //     }
-                            // }
                         }
                         Ok(_) => {
                             println!("didn't read right number of bytes");
@@ -377,6 +405,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let chat_history_area_height = chat_history_area.height as usize;
             let chat_history_area_width = chat_history_area.width as usize;
             if chat_history_area_height > 0 && chat_history_area_width > 0 {
+                chat_history.sort_by_key(|chat_msg| chat_msg.timestamp);
                 let chat_history_lines: Vec<_> = chat_history
                     .iter()
                     .enumerate()
@@ -542,8 +571,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let msg_uid = chat_msg_info.uid;
                     chat_history.push(chat_msg_info);
                     // send to server
-                    let mess_data =
-                        convert_to_stream_data(&ChatData::SelfChatMessage(user_message, msg_uid));
+                    let mess_data = convert_to_stream_data(&ClientNetworkData {
+                        chat_data: ClientChatData::SelfChatMessage(user_message, msg_uid),
+                    });
                     writer.write_all(&mess_data).await?;
                     // reset input field
                     current_input.clear();
@@ -594,17 +624,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => {}
             },
             Event::UserInputFrame(frame) => {
-                let frame_data = convert_to_stream_data(&ChatData::VideoFrame(
-                    frame[..].to_vec(),
-                    frame.resolution.0,
-                    frame.resolution.1,
-                ));
+                let frame_data = convert_to_stream_data(&ClientNetworkData {
+                    chat_data: ClientChatData::VideoFrame(
+                        frame[..].to_vec(),
+                        frame.resolution.0,
+                        frame.resolution.1,
+                    ),
+                });
                 writer.write_all(&frame_data).await?;
             }
             Event::ServerInput(chat_data) => match chat_data {
-                ChatData::OtherChatMessage(chat_message) => {
+                ServerNetworkData {
+                    timestamp,
+                    chat_data: ServerChatData::OtherChatMessage(chat_message),
+                } => {
                     // make this a helper function so we don't forget to update selected_ind
-                    chat_history.push(ChatMessageInfo::new(chat_message, false));
+                    chat_history.push(ChatMessageInfo::new_with_timestamp(
+                        chat_message,
+                        false,
+                        timestamp,
+                    ));
                     // TODO: order by timestamp
                     // // update selected_ind
                     // if let Some(selected_ind) = chat_history_selected_ind {
@@ -617,14 +656,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     //     chat_history_selected_ind = Some(0);
                     // }
                 }
-                ChatData::SelfChatMessage(chat_message, uid) => {
+                ServerNetworkData {
+                    timestamp,
+                    chat_data: ServerChatData::SelfChatMessage(chat_message, uid),
+                } => {
                     // this is our own message returned from server, update chat_history to display updated info
                     // remove the placeholder/pending chat message
                     chat_history.retain(|chat_msg_info| chat_msg_info.uid != uid);
                     // add up-to-update chat message to chat_history
-                    chat_history.push(ChatMessageInfo::new_with_uid(chat_message, false, uid));
+                    chat_history.push(ChatMessageInfo::new_with_all(
+                        chat_message,
+                        false,
+                        uid,
+                        timestamp,
+                    ));
                 }
-                ChatData::VideoFrame(data, width, height) => {
+                ServerNetworkData {
+                    timestamp: _,
+                    chat_data: ServerChatData::VideoFrame(data, width, height),
+                } => {
                     // println!("got frame with {} {}", width, height);
                     // RgbImage::from
                     // println!("{} {}", width * height, data.len());
@@ -639,6 +689,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         img.to_rgba8(), // ImageBuffer::from_raw(width, height, data)
                                         //     .expect("given frame buffer is not big enough"),
                     );
+                    if video_frames.len() > 2 {
+                        video_frames.remove(2);
+                    }
                 }
             },
             Event::Tick => {}
