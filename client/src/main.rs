@@ -81,9 +81,9 @@ pub struct ServerNetworkData {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ServerChatData {
-    OtherChatMessage(String),       // message
-    SelfChatMessage(String, usize), // message, id
-    VideoFrame(Vec<u8>, u32, u32),  // (stream_data, width, height)
+    OtherClientChatMessage(String),           // message
+    ReturnToSenderChatMessage(String, usize), // message, id
+    VideoFrame(Vec<u8>, u32, u32),            // (stream_data, width, height)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -93,8 +93,8 @@ pub struct ClientNetworkData {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientChatData {
-    SelfChatMessage(String, usize), // message, id
-    VideoFrame(Vec<u8>, u32, u32),  // (stream_data, width, height)
+    ChatMessage(String, usize),    // message, id
+    VideoFrame(Vec<u8>, u32, u32), // (stream_data, width, height)
 }
 
 // make a method of ChatData
@@ -575,7 +575,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     chat_history.push(chat_msg_info);
                     // send to server
                     let mess_data = convert_to_stream_data(&ClientNetworkData {
-                        chat_data: ClientChatData::SelfChatMessage(user_message, msg_uid),
+                        chat_data: ClientChatData::ChatMessage(user_message, msg_uid),
                     });
                     writer.write_all(&mess_data).await?;
                     // reset input field
@@ -639,7 +639,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Event::ServerInput(chat_data) => match chat_data {
                 ServerNetworkData {
                     timestamp,
-                    chat_data: ServerChatData::OtherChatMessage(chat_message),
+                    chat_data: ServerChatData::OtherClientChatMessage(chat_message),
                 } => {
                     // make this a helper function so we don't forget to update selected_ind
                     chat_history.push(ChatMessageInfo::new_with_timestamp(
@@ -660,7 +660,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 ServerNetworkData {
                     timestamp,
-                    chat_data: ServerChatData::SelfChatMessage(chat_message, uid),
+                    chat_data: ServerChatData::ReturnToSenderChatMessage(chat_message, uid),
                 } => {
                     // this is our own message returned from server, update chat_history to display updated info
                     // remove the placeholder/pending chat message

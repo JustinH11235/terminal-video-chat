@@ -21,9 +21,9 @@ pub struct ServerNetworkData {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ServerChatData {
-    OtherChatMessage(String),       // message
-    SelfChatMessage(String, usize), // message, id
-    VideoFrame(Vec<u8>, u32, u32),  // (stream_data, width, height)
+    OtherClientChatMessage(String),           // message
+    ReturnToSenderChatMessage(String, usize), // message, id
+    VideoFrame(Vec<u8>, u32, u32),            // (stream_data, width, height)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -33,8 +33,8 @@ pub struct ClientNetworkData {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ClientChatData {
-    SelfChatMessage(String, usize), // message, id
-    VideoFrame(Vec<u8>, u32, u32),  // (stream_data, width, height)
+    ChatMessage(String, usize),    // message, id
+    VideoFrame(Vec<u8>, u32, u32), // (stream_data, width, height)
 }
 
 fn convert_to_stream_data(network_data: &ServerNetworkData) -> Vec<u8> {
@@ -117,14 +117,14 @@ async fn main() {
                     res = rx.recv() => {
                         let (data, incoming_addr, timestamp) = res.expect("has errors for running behind, or senders dropped, handle properly");
                             match data {
-                                ClientNetworkData { chat_data: ClientChatData::SelfChatMessage(message, uid) } => {
+                                ClientNetworkData { chat_data: ClientChatData::ChatMessage(message, uid) } => {
                                     let response =
                                         if incoming_addr != addr {
                                             // from another client
-                                            ServerNetworkData { timestamp: timestamp, chat_data: ServerChatData::OtherChatMessage(message) }
+                                            ServerNetworkData { timestamp: timestamp, chat_data: ServerChatData::OtherClientChatMessage(message) }
                                         } else {
                                             // from this client
-                                            ServerNetworkData { timestamp: timestamp, chat_data: ServerChatData::SelfChatMessage(message, uid) }
+                                            ServerNetworkData { timestamp: timestamp, chat_data: ServerChatData::ReturnToSenderChatMessage(message, uid) }
                                         };
                                     let response = convert_to_stream_data(&response);
                                     writer.write_all(&response).await.expect("should handle properly, just ignore, maybe send 'message failed to send' in future");
