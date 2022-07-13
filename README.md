@@ -26,7 +26,7 @@ Server:
 - [x] Create basic string-only chat server (use telnet as client)
 - [x] Use Tokio async to process each client on a different thread with messaging queues to communicate between them
 - [x] Generalize to send/receive any format of data by creating custom TCP data transfer protocol
-- [ ] Send ReturnToSender response to message originator with updated information of what other users received.
+- [x] Send ReturnToSender response to message originator with updated information of what other users received.
 - [ ] Refactor common TCP util functions into common place
 - [ ] Create chat rooms, with shareable names and passcodes instead of everyone connecting to the same room (maybe keep the general room for fun?)
 - [x] Add support for sending video frames over TCP socket
